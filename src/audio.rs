@@ -8,6 +8,7 @@ pub enum AudioCommand {
     Play,
     Pause,
     Stop,
+    SetVolume(f32),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -34,6 +35,7 @@ pub fn spawn_audio_thread() -> (Sender<AudioCommand>, JoinHandle<()>) {
                     if let Ok(file) = File::open(&path) {
                         if let Ok(source) = rodio::Decoder::try_from(file) {
                             sink.append(source);
+                            sink.play();
                             _current_state = PlaybackState::Playing;
                         }
                     }
@@ -49,6 +51,9 @@ pub fn spawn_audio_thread() -> (Sender<AudioCommand>, JoinHandle<()>) {
                 AudioCommand::Stop => {
                     sink.clear();
                     _current_state = PlaybackState::Stopped;
+                }
+                AudioCommand::SetVolume(vol) => {
+                    sink.set_volume(vol);
                 }
             }
         }

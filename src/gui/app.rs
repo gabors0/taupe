@@ -1,5 +1,5 @@
 use crate::audio::{AudioCommand, PlaybackState};
-use iced::widget::{button, column, row, text};
+use iced::widget::{button, column, row, slider, text};
 use iced::Element;
 use rfd::FileDialog;
 use std::sync::mpsc::Sender;
@@ -8,6 +8,7 @@ pub struct App {
     audio_cmd: Sender<AudioCommand>,
     current_file: Option<String>,
     state: PlaybackState,
+    volume: f32,
 }
 
 #[derive(Debug, Clone)]
@@ -15,6 +16,8 @@ pub enum Message {
     LoadPressed,
     PlayPressed,
     PausePressed,
+    StopPressed,
+    VolValueChanged(f32),
 }
 
 impl App {
@@ -23,6 +26,7 @@ impl App {
             audio_cmd,
             current_file: None,
             state: PlaybackState::Stopped,
+            volume: 1.0,
         }
     }
 }
@@ -48,6 +52,15 @@ pub fn update(app: &mut App, message: Message) {
             let _ = app.audio_cmd.send(AudioCommand::Pause);
             app.state = PlaybackState::Paused;
         }
+        Message::StopPressed => {
+            let _ = app.audio_cmd.send(AudioCommand::Stop);
+            app.state = PlaybackState::Stopped;
+            app.current_file = None;
+        }
+        Message::VolValueChanged(value) => {
+            app.volume = value;
+            let _ = app.audio_cmd.send(AudioCommand::SetVolume(value));
+        }
     }
 }
 
@@ -67,8 +80,16 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
     };
 
-    column![file_text, row![load_btn, play_pause_btn].spacing(10),]
-        .spacing(20)
-        .padding(20)
-        .into()
+    let stop_btn = button("Stop").on_press(Message::StopPressed);
+
+    let volume_slider = slider(0.0..=1.0, app.volume, Message::VolValueChanged).step(0.01);
+
+    column![
+        file_text,
+        row![load_btn, play_pause_btn, stop_btn].spacing(10),
+        volume_slider
+    ]
+    .spacing(20)
+    .padding(20)
+    .into()
 }
