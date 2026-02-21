@@ -2,8 +2,13 @@ mod audio;
 mod gui;
 
 use audio::spawn_audio_thread;
+use gui::Message;
 use iced::theme::Palette;
 use iced::Color;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::time::Duration;
 
 const fn custom_palette() -> Palette {
     Palette {
@@ -21,13 +26,29 @@ fn theme_fn(_state: &gui::App) -> iced::Theme {
 }
 
 fn main() -> iced::Result {
-    let (audio_cmd, _audio_handle) = spawn_audio_thread();
+    use audio::AudioStatus;
+
+    let (status_tx, status_rx): (Sender<AudioStatus>, Receiver<AudioStatus>) =
+        std::sync::mpsc::channel();
+    let status_rx = Rc::new(RefCell::new(status_rx));
+    let (audio_cmd, _audio_handle) = spawn_audio_thread(status_tx);
+
+    let status_rx_for_init = Rc::clone(&status_rx);
 
     iced::application(
-        move || (gui::App::new(audio_cmd.clone()), iced::Task::none()),
+        move || {
+            (
+                gui::App::new(audio_cmd.clone(), status_rx_for_init.clone()),
+                iced::Task::none(),
+            )
+        },
         gui::update,
         gui::view,
     )
+    .subscription(|_app| {
+        // Fire a Tick message every 100ms so the update loop can drain audio status updates.
+        iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick)
+    })
     .title("Taupe")
     .theme(theme_fn)
     .run()

@@ -64,3 +64,14 @@ cargo build --release
 ```
 
 The binary will be at `target/release/taupe`.
+
+### Platform Compatibility
+
+| Platform | Tested? | Works? | Best Method |
+|----------|--------|--------|--------|
+| Windows  | - | - | - |
+| macOS    | - | - | - |
+| Linux (Ubuntu/Debian) | - | - | - |
+| Linux (Arch) | ✔ | ✔ | Build locally |
+| Linux (Fedora) | ✔ | ✔ | Build locally |
+| Linux (OpenSUSE) | - | - | - |
