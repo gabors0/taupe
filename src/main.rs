@@ -12,12 +12,20 @@ use std::time::Duration;
 
 const fn custom_palette() -> Palette {
     Palette {
-        background: Color::from_rgb(0.12, 0.11, 0.10),
-        text: Color::from_rgb(0.88, 0.86, 0.84),
-        primary: Color::from_rgb(0.702, 0.576, 0.463),
+        // bg from_rgb(0.212, 0.188, 0.169)
+        // bg-alt from_rgb(0.388, 0.361, 0.333) todo
+        // text, primary from_rgb(0.682, 0.631, 0.596)
+        // text-alt from_rgb(0.851, 0.851, 0.851) todo
+        // success from_rgb(0.604, 0.8, 0.612)
+        // warning from_rgb(0.855, 0.851, 0.525)
+        // danger from_rgb(0.847, 0.584, 0.584)
+        // https://coolors.co/36302b-635c55-aea198-d9d9d9-9acc9c-dad986-d89595
+        background: Color::from_rgb(0.212, 0.188, 0.169),
+        text: Color::from_rgb(0.682, 0.631, 0.596),
+        primary: Color::from_rgb(0.682, 0.631, 0.596),
         success: Color::from_rgb(0.48, 0.54, 0.41),
-        warning: Color::from_rgb(0.80, 0.60, 0.30),
-        danger: Color::from_rgb(0.64, 0.36, 0.31),
+        warning: Color::from_rgb(0.855, 0.851, 0.525),
+        danger: Color::from_rgb(0.847, 0.584, 0.584),
     }
 }
 

@@ -1,6 +1,22 @@
 use crate::audio::{AudioCommand, AudioStatus, PlaybackState};
-use iced::widget::{button, column, row, slider, text};
-use iced::Element;
+use iced::widget::{button, center, column, row, slider, svg, text};
+use iced::{Color, Element, Length};
+
+const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
+const BG_ALT: Color = Color::from_rgb(0.388, 0.361, 0.333);
+const TEXT: Color = Color::from_rgb(0.682, 0.631, 0.596);
+const TEXT_ALT: Color = Color::from_rgb(0.851, 0.851, 0.851);
+const SUCCESS: Color = Color::from_rgb(0.48, 0.54, 0.41);
+const WARNING: Color = Color::from_rgb(0.855, 0.851, 0.525);
+const DANGER: Color = Color::from_rgb(0.847, 0.584, 0.584);
+
+fn icon(path: &str) -> svg::Svg<'_> {
+    svg(path)
+        .width(Length::Fixed(16.0))
+        .height(Length::Fixed(16.0))
+        .style(|_theme, _status| svg::Style { color: Some(BG) })
+}
+
 use rfd::FileDialog;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -123,16 +139,22 @@ pub fn view(app: &App) -> Element<'_, Message> {
         "No file loaded".to_string()
     });
 
-    let load_btn = button("Load").on_press(Message::LoadPressed);
+    let load_btn = button("Load file")
+        .on_press(Message::LoadPressed)
+        .height(32);
 
     let play_pause_btn = match app.state {
-        PlaybackState::Playing => button("Pause").on_press(Message::PausePressed),
-        PlaybackState::Paused | PlaybackState::Stopped => {
-            button("Play").on_press(Message::PlayPressed)
-        }
+        PlaybackState::Playing => button(icon("assets/pause.svg"))
+            .on_press(Message::PausePressed)
+            .height(32),
+        PlaybackState::Paused | PlaybackState::Stopped => button(icon("assets/play.svg"))
+            .on_press(Message::PlayPressed)
+            .height(32),
     };
 
-    let stop_btn = button("Stop").on_press(Message::StopPressed);
+    let stop_btn = button(icon("assets/stop.svg"))
+        .on_press(Message::StopPressed)
+        .height(32);
 
     let volume_slider = slider(0.0..=1.0, app.volume, Message::VolValueChanged)
         .step(0.01)
@@ -143,7 +165,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let seek_max = if app.duration > 0.0 {
         app.duration
     } else {
-        1.0
+        0.0
     };
     let seek_slider = slider(0.0..=seek_max, app.seek_position, Message::SeekMoved)
         .on_release(Message::SeekReleased)
@@ -153,10 +175,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
     column![
         file_text,
         row![load_btn, play_pause_btn, stop_btn].spacing(10),
-        volume_slider,
-        seek_slider,
-        text(format!("Position: {:.2}s", app.position)),
-        text(format!("Duration: {:.2}s", app.duration)),
+        row![volume_slider, text("Volume")].spacing(10),
+        row![
+            seek_slider,
+            text(format!("{:.2}s/{:.2}s", app.position, app.duration))
+        ]
+        .spacing(10),
     ]
     .spacing(20)
     .padding(20)
