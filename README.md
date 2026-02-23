@@ -26,7 +26,7 @@
   - [x] Play, pause, stop
   - [x] Volume
   - [x] Seek
-  - [ ] Get metadata of songs
+  - [x] Get metadata of songs
   - [ ] Playback queue
   - [ ] Shuffle
   - [ ] Repeat (one/all)
@@ -36,7 +36,7 @@
   <summary>UI</summary>
 
   - [ ] App icon/logo
-  - [ ] Album art display
+  - [x] Album art display
   - [ ] Keyboard shortcuts
   - [ ] Settings menu
   - [ ] Light theme
