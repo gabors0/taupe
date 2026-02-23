@@ -1,4 +1,4 @@
-<h2 align=center>taupe</h2>
+<h2 align=center>![taupe logo](https://github.com/gabors0/taupe/blob/main/assets/brand/full.png)</h2>
 <h4 align=center>lossless music player made in rust using rodio and iced</h4>
 
 > [!IMPORTANT]
@@ -26,7 +26,7 @@
   - [x] Play, pause, stop
   - [x] Volume
   - [x] Seek
-  - [ ] Get metadata of songs
+  - [x] Get metadata of songs
   - [ ] Playback queue
   - [ ] Shuffle
   - [ ] Repeat (one/all)
@@ -35,8 +35,8 @@
 <details>
   <summary>UI</summary>
 
-  - [ ] App icon/logo
-  - [ ] Album art display
+  - [x] App icon/logo
+  - [x] Album art display
   - [ ] Keyboard shortcuts
   - [ ] Settings menu
   - [ ] Light theme

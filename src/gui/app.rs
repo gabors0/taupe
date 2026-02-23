@@ -198,15 +198,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .height(32);
 
     let play_pause_btn = match app.state {
-        PlaybackState::Playing => button(icon("assets/pause.svg"))
+        PlaybackState::Playing => button(icon("assets/icons/pause.svg"))
             .on_press(Message::PausePressed)
             .height(32),
-        PlaybackState::Paused | PlaybackState::Stopped => button(icon("assets/play.svg"))
+        PlaybackState::Paused | PlaybackState::Stopped => button(icon("assets/icons/play.svg"))
             .on_press(Message::PlayPressed)
             .height(32),
     };
 
-    let stop_btn = button(icon("assets/stop.svg"))
+    let stop_btn = button(icon("assets/icons/stop.svg"))
         .on_press(Message::StopPressed)
         .height(32);
 
