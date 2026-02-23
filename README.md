@@ -25,7 +25,7 @@
   - [x] Load file
   - [x] Play, pause, stop
   - [x] Volume
-  - [ ] Seek
+  - [x] Seek
   - [ ] Get metadata of songs
   - [ ] Playback queue
   - [ ] Shuffle
@@ -69,7 +69,7 @@ The binary will be at `target/release/taupe`.
 
 | Platform | Tested? | Works? | Best Method |
 |----------|--------|--------|--------|
-| Windows  | - | - | - |
+| Windows  | ✔ | ✔ | Build locally |
 | macOS    | - | - | - |
 | Linux (Ubuntu/Debian) | - | - | - |
 | Linux (Arch) | ✔ | ✔ | Build locally |

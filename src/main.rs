@@ -5,6 +5,7 @@ use audio::spawn_audio_thread;
 use gui::Message;
 use iced::theme::Palette;
 use iced::Color;
+use iced::window;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -59,5 +60,9 @@ fn main() -> iced::Result {
     })
     .title("Taupe")
     .theme(theme_fn)
+    .window(window::Settings {
+            min_size: Some(iced::Size::new(400.0, 300.0)),
+            ..window::Settings::default()
+        })
     .run()
 }
