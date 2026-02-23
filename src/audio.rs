@@ -34,7 +34,6 @@ pub enum AudioStatus {
         bitrate_kbps: Option<u32>,
         channels: Option<u8>,
         bit_depth: Option<u8>,
-        codec: Option<String>,
     },
 }
 
@@ -55,7 +54,7 @@ pub fn spawn_audio_thread(
         let stream =
             rodio::OutputStreamBuilder::open_default_stream().expect("Failed to open audio stream");
         let sink = rodio::Sink::connect_new(stream.mixer());
-        let mut _current_state = PlaybackState::Stopped;
+        let mut current_state = PlaybackState::Stopped;
         let mut last_position_report = std::time::Instant::now();
 
         loop {
@@ -70,41 +69,22 @@ pub fn spawn_audio_thread(
                                 .primary_tag()
                                 .or_else(|| tagged_file.first_tag());
 
-                            #[allow(unused_assignments)]
-                            let mut title: Option<String> = None;
-                            #[allow(unused_assignments)]
-                            let mut artist: Option<String> = None;
-                            #[allow(unused_assignments)]
-                            let mut album: Option<String> = None;
-                            #[allow(unused_assignments)]
-                            let mut track_no: Option<u16> = None;
-                            #[allow(unused_assignments)]
-                            let mut disc_no: Option<u16> = None;
-                            #[allow(unused_assignments)]
-                            let mut sample_rate_hz: Option<u32> = None;
-                            #[allow(unused_assignments)]
-                            let mut bitrate_kbps: Option<u32> = None;
-                            #[allow(unused_assignments)]
-                            let mut channels: Option<u8> = None;
-                            #[allow(unused_assignments)]
-                            let mut bit_depth: Option<u8> = None;
-                            #[allow(unused_assignments)]
-                            let mut codec: Option<String> = None;
-
-                            if let Some(tag) = tag {
-                                title = tag.title().map(|s| s.into_owned());
-                                artist = tag.artist().map(|s| s.into_owned());
-                                album = tag.album().map(|s| s.into_owned());
-                                track_no = tag.track().map(|t| t as u16);
-                                disc_no = tag.disk().map(|d| d as u16);
-                            }
-
                             let properties = tagged_file.properties();
-                            sample_rate_hz = properties.sample_rate();
-                            bitrate_kbps = properties.audio_bitrate();
-                            channels = properties.channels();
-                            bit_depth = properties.bit_depth();
-                            codec = None;
+
+                            let title =
+                                tag.as_ref().and_then(|t| t.title().map(|s| s.into_owned()));
+                            let artist = tag
+                                .as_ref()
+                                .and_then(|t| t.artist().map(|s| s.into_owned()));
+                            let album =
+                                tag.as_ref().and_then(|t| t.album().map(|s| s.into_owned()));
+                            let track_no = tag.as_ref().and_then(|t| t.track().map(|v| v as u16));
+                            let disc_no = tag.as_ref().and_then(|t| t.disk().map(|v| v as u16));
+
+                            let sample_rate_hz = properties.sample_rate();
+                            let bitrate_kbps = properties.audio_bitrate();
+                            let channels = properties.channels();
+                            let bit_depth = properties.bit_depth();
 
                             let _ = status_tx.send(AudioStatus::Metadata {
                                 title,
@@ -116,7 +96,6 @@ pub fn spawn_audio_thread(
                                 bitrate_kbps,
                                 channels,
                                 bit_depth,
-                                codec,
                             });
                         }
 
@@ -126,7 +105,7 @@ pub fn spawn_audio_thread(
                                 let duration = source.total_duration();
                                 sink.append(source);
                                 sink.play();
-                                _current_state = PlaybackState::Playing;
+                                current_state = PlaybackState::Playing;
 
                                 if let Some(dur) = duration {
                                     let _ =
@@ -137,16 +116,16 @@ pub fn spawn_audio_thread(
                     }
                     AudioCommand::Play => {
                         sink.play();
-                        _current_state = PlaybackState::Playing;
+                        current_state = PlaybackState::Playing;
                     }
                     AudioCommand::Pause => {
                         sink.pause();
-                        _current_state = PlaybackState::Paused;
+                        current_state = PlaybackState::Paused;
                     }
                     AudioCommand::Stop => {
                         sink.pause();
                         let _ = sink.try_seek(Duration::from_secs(0));
-                        _current_state = PlaybackState::Stopped;
+                        current_state = PlaybackState::Stopped;
                         let _ = status_tx.send(AudioStatus::Position(0.0));
                     }
                     AudioCommand::SetVolume(vol) => {
@@ -160,7 +139,7 @@ pub fn spawn_audio_thread(
                 Err(RecvTimeoutError::Disconnected) => break,
             }
 
-            if _current_state == PlaybackState::Playing
+            if current_state == PlaybackState::Playing
                 && last_position_report.elapsed() > Duration::from_millis(250)
             {
                 let pos = sink.get_pos().as_secs_f32();

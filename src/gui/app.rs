@@ -43,7 +43,6 @@ pub struct App {
     bitrate_kbps: Option<u32>,
     channels: Option<u8>,
     bit_depth: Option<u8>,
-    codec: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +82,6 @@ impl App {
             bitrate_kbps: None,
             channels: None,
             bit_depth: None,
-            codec: None,
         }
     }
 }
@@ -157,7 +155,6 @@ pub fn update(app: &mut App, message: Message) {
                         bitrate_kbps,
                         channels,
                         bit_depth,
-                        codec,
                     } => {
                         app.title = title;
                         app.artist = artist;
@@ -168,7 +165,6 @@ pub fn update(app: &mut App, message: Message) {
                         app.bitrate_kbps = bitrate_kbps;
                         app.channels = channels;
                         app.bit_depth = bit_depth;
-                        app.codec = codec;
                     }
                 }
             }
@@ -255,10 +251,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
         row![
             text(format!("Channels: {}", app.channels.unwrap_or(0))),
             text(format!("Bit Depth: {} bit", app.bit_depth.unwrap_or(0))),
-            text(format!(
-                "Codec: {}",
-                app.codec.as_deref().unwrap_or("Unknown")
-            ))
         ]
         .spacing(10),
     ]
