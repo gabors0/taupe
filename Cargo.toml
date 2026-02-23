@@ -1,10 +1,10 @@
 [package]
 name = "taupe"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.14.0", features = ["tokio", "svg"] }
+iced = { version = "0.14.0", features = ["tokio", "svg", "image"] }
 lofty = "0.23.2"
 rfd = "0.17.2"
 rodio = { version = "0.21.1", features = ["symphonia-all"] }

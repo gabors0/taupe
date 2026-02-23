@@ -1,5 +1,5 @@
 use crate::audio::{AudioCommand, AudioStatus, PlaybackState};
-use iced::widget::{button, column, row, slider, svg, text};
+use iced::widget::{button, column, image, row, slider, svg, text};
 use iced::{Color, Element, Length};
 
 const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
@@ -39,6 +39,7 @@ pub struct App {
     album: Option<String>,
     track_no: Option<u16>,
     disc_no: Option<u16>,
+    picture_handle: Option<image::Handle>,
     sample_rate_hz: Option<u32>,
     bitrate_kbps: Option<u32>,
     channels: Option<u8>,
@@ -78,6 +79,7 @@ impl App {
             album: None,
             track_no: None,
             disc_no: None,
+            picture_handle: None,
             sample_rate_hz: None,
             bitrate_kbps: None,
             channels: None,
@@ -116,6 +118,12 @@ pub fn update(app: &mut App, message: Message) {
             app.position = 0.0;
             app.seek_position = 0.0;
             app.duration = 0.0;
+            app.title = None;
+            app.artist = None;
+            app.album = None;
+            app.track_no = None;
+            app.disc_no = None;
+            app.picture_handle = None;
         }
         Message::VolValueChanged(value) => {
             app.volume = value;
@@ -151,16 +159,22 @@ pub fn update(app: &mut App, message: Message) {
                         album,
                         track_no,
                         disc_no,
+                        picture,
                         sample_rate_hz,
                         bitrate_kbps,
                         channels,
                         bit_depth,
                     } => {
+                        eprintln!("[GUI] Received metadata, picture: {}", picture.is_some());
                         app.title = title;
                         app.artist = artist;
                         app.album = album;
                         app.track_no = track_no;
                         app.disc_no = disc_no;
+                        app.picture_handle = picture.map(|(data, _mime)| {
+                            eprintln!("[GUI] Creating image handle from {} bytes", data.len());
+                            image::Handle::from_bytes(data)
+                        });
                         app.sample_rate_hz = sample_rate_hz;
                         app.bitrate_kbps = bitrate_kbps;
                         app.channels = channels;
@@ -212,6 +226,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .step(0.01)
         .width(120);
 
+    let cover_image: Element<'_, Message> = if let Some(handle) = &app.picture_handle {
+        image(handle.clone())
+            .width(Length::Fixed(200.0))
+            .height(Length::Fixed(200.0))
+            .into()
+    } else {
+        text("No cover art").into()
+    };
+
     column![
         file_text,
         row![load_btn, play_pause_btn, stop_btn].spacing(10),
@@ -220,6 +243,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             seek_slider,
             text(format!("{:.2}s/{:.2}s", app.position, app.duration))
         ],
+        cover_image,
         row![text(format!(
             "Title: {}",
             app.title.as_deref().unwrap_or("Unknown")
