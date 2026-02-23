@@ -1,5 +1,5 @@
 use crate::audio::{AudioCommand, AudioStatus, PlaybackState};
-use iced::widget::{button, center, column, row, slider, svg, text};
+use iced::widget::{button, column, row, slider, svg, text};
 use iced::{Color, Element, Length};
 
 const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
@@ -33,6 +33,17 @@ pub struct App {
     /// The seek bar's visual position while dragging (seconds). Equals `position` when not dragging.
     seek_position: f32,
     duration: f32,
+    /// --- metadata ---
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    track_no: Option<u16>,
+    disc_no: Option<u16>,
+    sample_rate_hz: Option<u32>,
+    bitrate_kbps: Option<u32>,
+    channels: Option<u8>,
+    bit_depth: Option<u8>,
+    codec: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,6 +74,16 @@ impl App {
             position: 0.0,
             seek_position: 0.0,
             duration: 0.0,
+            title: None,
+            artist: None,
+            album: None,
+            track_no: None,
+            disc_no: None,
+            sample_rate_hz: None,
+            bitrate_kbps: None,
+            channels: None,
+            bit_depth: None,
+            codec: None,
         }
     }
 }
@@ -126,6 +147,29 @@ pub fn update(app: &mut App, message: Message) {
                         app.seek_position = pos;
                     }
                     AudioStatus::Duration(dur) => app.duration = dur,
+                    AudioStatus::Metadata {
+                        title,
+                        artist,
+                        album,
+                        track_no,
+                        disc_no,
+                        sample_rate_hz,
+                        bitrate_kbps,
+                        channels,
+                        bit_depth,
+                        codec,
+                    } => {
+                        app.title = title;
+                        app.artist = artist;
+                        app.album = album;
+                        app.track_no = track_no;
+                        app.disc_no = disc_no;
+                        app.sample_rate_hz = sample_rate_hz;
+                        app.bitrate_kbps = bitrate_kbps;
+                        app.channels = channels;
+                        app.bit_depth = bit_depth;
+                        app.codec = codec;
+                    }
                 }
             }
         }
@@ -179,6 +223,42 @@ pub fn view(app: &App) -> Element<'_, Message> {
         row![
             seek_slider,
             text(format!("{:.2}s/{:.2}s", app.position, app.duration))
+        ],
+        row![text(format!(
+            "Title: {}",
+            app.title.as_deref().unwrap_or("Unknown")
+        )),]
+        .spacing(5),
+        row![text(format!(
+            "Artist: {}",
+            app.artist.as_deref().unwrap_or("Unknown")
+        )),]
+        .spacing(5),
+        row![text(format!(
+            "Album: {}",
+            app.album.as_deref().unwrap_or("Unknown")
+        )),]
+        .spacing(5),
+        row![
+            text(format!("Track: {}", app.track_no.unwrap_or(0))),
+            text(format!("Disc: {}", app.disc_no.unwrap_or(0)))
+        ]
+        .spacing(10),
+        row![
+            text(format!(
+                "Sample Rate: {} Hz",
+                app.sample_rate_hz.unwrap_or(0)
+            )),
+            text(format!("Bitrate: {} kbps", app.bitrate_kbps.unwrap_or(0)))
+        ]
+        .spacing(10),
+        row![
+            text(format!("Channels: {}", app.channels.unwrap_or(0))),
+            text(format!("Bit Depth: {} bit", app.bit_depth.unwrap_or(0))),
+            text(format!(
+                "Codec: {}",
+                app.codec.as_deref().unwrap_or("Unknown")
+            ))
         ]
         .spacing(10),
     ]
