@@ -1,14 +1,15 @@
 use crate::audio::{AudioCommand, AudioStatus, PlaybackState};
-use iced::widget::{button, column, image, row, slider, svg, text};
-use iced::{Color, Element, Length};
+use ::image::ImageFormat;
+use iced::widget::{Row, Space, button, column, container, image, row, rule, slider, svg, text};
+use iced::{Alignment, Color, Element, Length};
 
 const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
 const BG_ALT: Color = Color::from_rgb(0.388, 0.361, 0.333);
-const TEXT: Color = Color::from_rgb(0.682, 0.631, 0.596);
-const TEXT_ALT: Color = Color::from_rgb(0.851, 0.851, 0.851);
-const SUCCESS: Color = Color::from_rgb(0.48, 0.54, 0.41);
-const WARNING: Color = Color::from_rgb(0.855, 0.851, 0.525);
-const DANGER: Color = Color::from_rgb(0.847, 0.584, 0.584);
+const TEXT: Color = Color::from_rgb(0.851, 0.851, 0.851);
+const TEXT_ALT: Color = Color::from_rgb(0.682, 0.631, 0.596);
+// const SUCCESS: Color = Color::from_rgb(0.48, 0.54, 0.41);
+// const WARNING: Color = Color::from_rgb(0.855, 0.851, 0.525);
+// const DANGER: Color = Color::from_rgb(0.847, 0.584, 0.584);
 
 fn icon(path: &str) -> svg::Svg<'_> {
     svg(path)
@@ -44,6 +45,7 @@ pub struct App {
     bitrate_kbps: Option<u32>,
     channels: Option<u8>,
     bit_depth: Option<u8>,
+    file_format: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -70,7 +72,7 @@ impl App {
             status_rx,
             current_file: None,
             state: PlaybackState::Stopped,
-            volume: 1.0,
+            volume: 0.5,
             position: 0.0,
             seek_position: 0.0,
             duration: 0.0,
@@ -84,6 +86,7 @@ impl App {
             bitrate_kbps: None,
             channels: None,
             bit_depth: None,
+            file_format: None,
         }
     }
 }
@@ -114,7 +117,6 @@ pub fn update(app: &mut App, message: Message) {
         Message::StopPressed => {
             let _ = app.audio_cmd.send(AudioCommand::Stop);
             app.state = PlaybackState::Stopped;
-            app.current_file = None;
             app.position = 0.0;
             app.seek_position = 0.0;
             app.duration = 0.0;
@@ -124,6 +126,7 @@ pub fn update(app: &mut App, message: Message) {
             app.track_no = None;
             app.disc_no = None;
             app.picture_handle = None;
+            app.file_format = None;
         }
         Message::VolValueChanged(value) => {
             app.volume = value;
@@ -164,6 +167,7 @@ pub fn update(app: &mut App, message: Message) {
                         bitrate_kbps,
                         channels,
                         bit_depth,
+                        file_format,
                     } => {
                         eprintln!("[GUI] Received metadata, picture: {}", picture.is_some());
                         app.title = title;
@@ -173,12 +177,25 @@ pub fn update(app: &mut App, message: Message) {
                         app.disc_no = disc_no;
                         app.picture_handle = picture.map(|(data, _mime)| {
                             eprintln!("[GUI] Creating image handle from {} bytes", data.len());
+                            if let Ok(img) = ::image::load_from_memory(&data) {
+                                let resized = img.resize_exact(
+                                    80,
+                                    80,
+                                    ::image::imageops::FilterType::Lanczos3,
+                                );
+                                let mut buffer = Vec::new();
+                                let mut cursor = std::io::Cursor::new(&mut buffer);
+                                if resized.write_to(&mut cursor, ImageFormat::Png).is_ok() {
+                                    return image::Handle::from_bytes(buffer);
+                                }
+                            }
                             image::Handle::from_bytes(data)
                         });
                         app.sample_rate_hz = sample_rate_hz;
                         app.bitrate_kbps = bitrate_kbps;
                         app.channels = channels;
                         app.bit_depth = bit_depth;
+                        app.file_format = file_format;
                     }
                 }
             }
@@ -187,15 +204,18 @@ pub fn update(app: &mut App, message: Message) {
 }
 
 pub fn view(app: &App) -> Element<'_, Message> {
-    let file_text = text(if let Some(name) = &app.current_file {
-        name.clone()
-    } else {
-        "No file loaded".to_string()
-    });
+    // -- seperator ----------------------
+    let separator = || {
+        rule::horizontal(2).style(|_theme| rule::Style {
+            color: BG_ALT,
+            fill_mode: rule::FillMode::Full,
+            radius: 0.0.into(),
+            snap: true,
+        })
+    };
 
-    let load_btn = button("Load file")
-        .on_press(Message::LoadPressed)
-        .height(32);
+    // -- pre-build widgets ----------------------------------------------------
+    let load_btn = button("Load").on_press(Message::LoadPressed).height(32);
 
     let play_pause_btn = match app.state {
         PlaybackState::Playing => button(icon("assets/icons/pause.svg"))
@@ -210,12 +230,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .on_press(Message::StopPressed)
         .height(32);
 
-    let volume_slider = slider(0.0..=1.0, app.volume, Message::VolValueChanged)
+    let vol_slider = slider(0.0..=1.0, app.volume, Message::VolValueChanged)
         .step(0.01)
-        .width(60);
+        .width(Length::Fill);
+    let vol_label = text(format!("{:.0}%", app.volume * 100.0)).color(TEXT_ALT);
+    let volume_block = row![vol_slider, vol_label]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .width(Length::Fixed(140.0));
 
-    // Use seek_position so the slider tracks dragging visually.
-    // on_release fires SeekReleased when the mouse button is lifted.
     let seek_max = if app.duration > 0.0 {
         app.duration
     } else {
@@ -224,61 +247,92 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let seek_slider = slider(0.0..=seek_max, app.seek_position, Message::SeekMoved)
         .on_release(Message::SeekReleased)
         .step(0.01)
-        .width(120);
+        .width(Length::Fill);
 
-    let cover_image: Element<'_, Message> = if let Some(handle) = &app.picture_handle {
-        image(handle.clone())
-            .width(Length::Fixed(200.0))
-            .height(Length::Fixed(200.0))
-            .into()
-    } else {
-        text("No cover art").into()
-    };
+    // -- row 1 -------------------------------------------------
+    let format_label = app.file_format.as_deref().unwrap_or("<format label>");
 
-    column![
-        file_text,
-        row![load_btn, play_pause_btn, stop_btn].spacing(10),
-        row![volume_slider, text("Volume")].spacing(10),
-        row![
-            seek_slider,
-            text(format!("{:.2}s/{:.2}s", app.position, app.duration))
-        ],
-        cover_image,
-        row![text(format!(
-            "Title: {}",
-            app.title.as_deref().unwrap_or("Unknown")
-        )),]
-        .spacing(5),
-        row![text(format!(
-            "Artist: {}",
-            app.artist.as_deref().unwrap_or("Unknown")
-        )),]
-        .spacing(5),
-        row![text(format!(
-            "Album: {}",
-            app.album.as_deref().unwrap_or("Unknown")
-        )),]
-        .spacing(5),
-        row![
-            text(format!("Track: {}", app.track_no.unwrap_or(0))),
-            text(format!("Disc: {}", app.disc_no.unwrap_or(0)))
+    let mut now_playing_children: Vec<Element<'_, Message>> = Vec::new();
+
+    // if no album art, no space taken up
+    if let Some(handle) = &app.picture_handle {
+        now_playing_children.push(
+            image(handle.clone())
+                .width(Length::Fixed(80.0))
+                .height(Length::Fixed(80.0))
+                .into(),
+        );
+    }
+
+    now_playing_children.push(
+        column![
+            text(app.title.as_deref().unwrap_or("<no title>"))
+                .color(TEXT)
+                .size(18),
+            text(app.artist.as_deref().unwrap_or("<no artist>")).color(TEXT_ALT),
+            text(app.album.as_deref().unwrap_or("<no album>")).color(TEXT_ALT),
         ]
-        .spacing(10),
-        row![
-            text(format!(
-                "Sample Rate: {} Hz",
-                app.sample_rate_hz.unwrap_or(0)
-            )),
-            text(format!("Bitrate: {} kbps", app.bitrate_kbps.unwrap_or(0)))
-        ]
-        .spacing(10),
-        row![
-            text(format!("Channels: {}", app.channels.unwrap_or(0))),
-            text(format!("Bit Depth: {} bit", app.bit_depth.unwrap_or(0))),
-        ]
-        .spacing(10),
+        .spacing(4)
+        .into(),
+    );
+
+    now_playing_children.push(Space::new().width(Length::Fill).into());
+
+    // format / bitrate / sample rate
+    now_playing_children.push(
+        container(
+            column![
+                text(format_label).color(TEXT_ALT),
+                text(format!("{} kbps", app.bitrate_kbps.unwrap_or(0))).color(TEXT_ALT),
+                text(format!("{} Hz", app.sample_rate_hz.unwrap_or(0))).color(TEXT_ALT),
+            ]
+            .spacing(4)
+            .align_x(Alignment::End),
+        )
+        .width(Length::Fixed(100.0))
+        .align_right(Length::Fill)
+        .into(),
+    );
+
+    let now_playing_row = Row::with_children(now_playing_children)
+        .spacing(12)
+        .align_y(Alignment::Center);
+
+    // -- row 2 -----------------------------
+    //   [seek -----o--------------------------------- pos/dur][vol% ----o-]
+    //   |      spacer      [Load] [Play/Pause] [Stop]        spacer       |
+    let buttons_row = row![
+        Space::new().width(Length::Fill),
+        load_btn,
+        play_pause_btn,
+        stop_btn,
+        Space::new().width(Length::Fill),
     ]
-    .spacing(20)
-    .padding(20)
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let sliders_row = row![
+        seek_slider,
+        text(format!("{:.1}/{:.1}", app.position, app.duration)).color(TEXT_ALT),
+        volume_block,
+    ]
+    .spacing(8)
+    .align_y(Alignment::Center);
+
+    let controls_block = column![sliders_row, buttons_row].spacing(6);
+
+    // -- row 3 (under construction) ----------------------------------------
+    let empty = Space::new().height(Length::Fill);
+
+    // -- main ---------------------------------------------------------
+    column![
+        now_playing_row,
+        separator(),
+        controls_block,
+        separator(),
+        empty,
+    ]
+    .spacing(16)
+    .padding(16)
     .into()
 }

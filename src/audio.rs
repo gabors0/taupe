@@ -1,17 +1,15 @@
-use lofty::picture::Picture;
+use lofty::file::AudioFile;
+use lofty::file::FileType;
+use lofty::file::TaggedFileExt;
+use lofty::picture::PictureType;
+use lofty::probe::Probe;
+use lofty::tag::Accessor;
 use rodio::Source;
 use std::fs::File;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
-
-use lofty::file::AudioFile;
-use lofty::file::TaggedFileExt;
-use lofty::picture::PictureType;
-use lofty::prelude::*;
-use lofty::probe::Probe;
-use lofty::tag::Accessor;
 
 pub enum AudioCommand {
     Load(PathBuf),
@@ -37,6 +35,7 @@ pub enum AudioStatus {
         bitrate_kbps: Option<u32>,
         channels: Option<u8>,
         bit_depth: Option<u8>,
+        file_format: Option<String>,
     },
 }
 
@@ -57,8 +56,10 @@ pub fn spawn_audio_thread(
         let stream =
             rodio::OutputStreamBuilder::open_default_stream().expect("Failed to open audio stream");
         let sink = rodio::Sink::connect_new(stream.mixer());
+        sink.set_volume(0.5);
         let mut current_state = PlaybackState::Stopped;
         let mut last_position_report = std::time::Instant::now();
+        let mut current_path: Option<PathBuf> = None;
 
         loop {
             match cmd_rx.recv_timeout(Duration::from_millis(100)) {
@@ -117,8 +118,24 @@ pub fn spawn_audio_thread(
                             let bitrate_kbps = properties.audio_bitrate();
                             let channels = properties.channels();
                             let bit_depth = properties.bit_depth();
+                            let file_format = match tagged_file.file_type() {
+                                FileType::Mpeg => Some("mp3".to_string()),
+                                FileType::Flac => Some("flac".to_string()),
+                                FileType::Wav => Some("wav".to_string()),
+                                FileType::Vorbis => Some("ogg".to_string()),
+                                FileType::Mp4 => Some("mp4".to_string()),
+                                FileType::Mpc => Some("mpc".to_string()),
+                                FileType::Opus => Some("opus".to_string()),
+                                FileType::Ape => Some("ape".to_string()),
+                                FileType::Aac => Some("aac".to_string()),
+                                FileType::Aiff => Some("aiff".to_string()),
+                                FileType::Speex => Some("speex".to_string()),
+                                FileType::WavPack => Some("wv".to_string()),
+                                FileType::Custom(_) => None,
+                                _ => None,
+                            };
 
-                            eprintln!("[AUDIO] Sending metadata, picture: {}", picture.is_some());
+                            eprintln!("[GUI] Sending metadata, picture: {}", picture.is_some());
                             let _ = status_tx.send(AudioStatus::Metadata {
                                 title,
                                 artist,
@@ -130,6 +147,7 @@ pub fn spawn_audio_thread(
                                 bitrate_kbps,
                                 channels,
                                 bit_depth,
+                                file_format,
                             });
                         }
 
@@ -140,6 +158,7 @@ pub fn spawn_audio_thread(
                                 sink.append(source);
                                 sink.play();
                                 current_state = PlaybackState::Playing;
+                                current_path = Some(path);
 
                                 if let Some(dur) = duration {
                                     let _ =
@@ -157,10 +176,88 @@ pub fn spawn_audio_thread(
                         current_state = PlaybackState::Paused;
                     }
                     AudioCommand::Stop => {
-                        sink.pause();
-                        let _ = sink.try_seek(Duration::from_secs(0));
-                        current_state = PlaybackState::Stopped;
-                        let _ = status_tx.send(AudioStatus::Position(0.0));
+                        if let Some(path) = current_path.clone() {
+                            sink.clear();
+                            if let Ok(tagged_file) = Probe::open(&path).and_then(|p| p.read()) {
+                                let tag = tagged_file
+                                    .primary_tag()
+                                    .or_else(|| tagged_file.first_tag());
+                                let properties = tagged_file.properties();
+
+                                let title =
+                                    tag.as_ref().and_then(|t| t.title().map(|s| s.into_owned()));
+                                let artist = tag
+                                    .as_ref()
+                                    .and_then(|t| t.artist().map(|s| s.into_owned()));
+                                let album =
+                                    tag.as_ref().and_then(|t| t.album().map(|s| s.into_owned()));
+                                let track_no =
+                                    tag.as_ref().and_then(|t| t.track().map(|v| v as u16));
+                                let disc_no = tag.as_ref().and_then(|t| t.disk().map(|v| v as u16));
+
+                                let mut picture = None;
+                                if let Some(t) = tag {
+                                    for pic in t.pictures() {
+                                        if pic.pic_type() == PictureType::CoverFront {
+                                            let data = pic.data().to_vec();
+                                            let mime = pic
+                                                .mime_type()
+                                                .map(|m| m.to_string())
+                                                .unwrap_or_else(|| "image/jpeg".to_string());
+                                            picture = Some((data, mime));
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                let _ = status_tx.send(AudioStatus::Metadata {
+                                    title,
+                                    artist,
+                                    album,
+                                    track_no,
+                                    disc_no,
+                                    picture,
+                                    sample_rate_hz: properties.sample_rate(),
+                                    bitrate_kbps: properties.audio_bitrate(),
+                                    channels: properties.channels(),
+                                    bit_depth: properties.bit_depth(),
+                                    file_format: match tagged_file.file_type() {
+                                        FileType::Mpeg => Some("mp3".to_string()),
+                                        FileType::Flac => Some("flac".to_string()),
+                                        FileType::Wav => Some("wav".to_string()),
+                                        FileType::Vorbis => Some("ogg".to_string()),
+                                        FileType::Mp4 => Some("mp4".to_string()),
+                                        FileType::Mpc => Some("mpc".to_string()),
+                                        FileType::Opus => Some("opus".to_string()),
+                                        FileType::Ape => Some("ape".to_string()),
+                                        FileType::Aac => Some("aac".to_string()),
+                                        FileType::Aiff => Some("aiff".to_string()),
+                                        FileType::Speex => Some("speex".to_string()),
+                                        FileType::WavPack => Some("wv".to_string()),
+                                        FileType::Custom(_) => None,
+                                        _ => None,
+                                    },
+                                });
+                            }
+
+                            if let Ok(file) = File::open(&path) {
+                                if let Ok(source) = rodio::Decoder::try_from(file) {
+                                    let duration = source.total_duration();
+                                    sink.append(source);
+                                    current_state = PlaybackState::Stopped;
+                                    let _ = status_tx.send(AudioStatus::Position(0.0));
+                                    if let Some(dur) = duration {
+                                        let _ = status_tx
+                                            .send(AudioStatus::Duration(dur.as_secs_f32()));
+                                    }
+                                }
+                            }
+                        } else {
+                            sink.pause();
+                            let _ = sink.try_seek(Duration::from_secs(0));
+                            current_state = PlaybackState::Stopped;
+                            let _ = status_tx.send(AudioStatus::Position(0.0));
+                        }
                     }
                     AudioCommand::SetVolume(vol) => {
                         sink.set_volume(vol);

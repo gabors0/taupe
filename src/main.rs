@@ -3,8 +3,8 @@ mod gui;
 
 use audio::spawn_audio_thread;
 use gui::Message;
-use iced::theme::Palette;
 use iced::Color;
+use iced::theme::Palette;
 use iced::window;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -61,8 +61,8 @@ fn main() -> iced::Result {
     .title("Taupe")
     .theme(theme_fn)
     .window(window::Settings {
-            min_size: Some(iced::Size::new(400.0, 300.0)),
-            ..window::Settings::default()
-        })
+        min_size: Some(iced::Size::new(500.0, 300.0)),
+        ..window::Settings::default()
+    })
     .run()
 }
