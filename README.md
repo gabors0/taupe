@@ -78,7 +78,8 @@ The binary will be at `target/release/taupe`.
 |----------|--------|--------|--------|
 | Windows  | ✔ | ✔ | Build locally |
 | macOS    | - | - | - |
-| Linux (Ubuntu/Debian) | - | - | - |
+| Linux (Ubuntu/Debian) | - | Probably | - |
 | Linux (Arch) | ✔ | ✔ | Build locally |
 | Linux (Fedora) | ✔ | ✔ | Build locally |
-| Linux (OpenSUSE) | - | - | - |
+| Linux (OpenSUSE) | - | Probably | - |
+| Linux (Other) | - | Probably | - |
