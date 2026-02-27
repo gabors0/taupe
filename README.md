@@ -1,4 +1,6 @@
-<h2 align=center>![taupe logo](https://github.com/gabors0/taupe/blob/main/assets/brand/full.png)</h2>
+<h2 align=center>
+  <img src="https://github.com/gabors0/taupe/blob/main/assets/brand/full.png" alt="taupe logo" height=96>
+</h2>
 <h4 align=center>lossless music player made in rust using rodio and iced</h4>
 
 > [!IMPORTANT]
