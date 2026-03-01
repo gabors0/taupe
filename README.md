@@ -6,10 +6,6 @@
 > [!IMPORTANT]
 > this project is still *very* far from done, look at the todo list to see the avaiable features
 
-### Known bugs
-- Seek slider buggy when dragging
-- Alac album covers not working
-
 ### Todo/Roadmap
 <details>
   <summary>Audio formats </summary>

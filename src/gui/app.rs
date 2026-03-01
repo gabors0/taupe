@@ -33,6 +33,8 @@ pub struct App {
     position: f32,
     /// The seek bar's visual position while dragging (seconds). Equals `position` when not dragging.
     seek_position: f32,
+    /// True while the user is actively dragging the seek slider.
+    is_seeking: bool,
     duration: f32,
     /// --- metadata ---
     title: Option<String>,
@@ -75,6 +77,7 @@ impl App {
             volume: 0.5,
             position: 0.0,
             seek_position: 0.0,
+            is_seeking: false,
             duration: 0.0,
             title: None,
             artist: None,
@@ -104,6 +107,7 @@ pub fn update(app: &mut App, message: Message) {
                 app.state = PlaybackState::Playing;
                 app.position = 0.0;
                 app.seek_position = 0.0;
+                app.is_seeking = false;
             }
         }
         Message::PlayPressed => {
@@ -119,6 +123,7 @@ pub fn update(app: &mut App, message: Message) {
             app.state = PlaybackState::Stopped;
             app.position = 0.0;
             app.seek_position = 0.0;
+            app.is_seeking = false;
             app.duration = 0.0;
             app.title = None;
             app.artist = None;
@@ -134,10 +139,12 @@ pub fn update(app: &mut App, message: Message) {
         }
         Message::SeekMoved(secs) => {
             // Only update the visual position while dragging; don't seek yet.
+            app.is_seeking = true;
             app.seek_position = secs;
         }
         Message::SeekReleased => {
             // Send the seek command with position converted to milliseconds.
+            app.is_seeking = false;
             app.position = app.seek_position;
             let _ = app
                 .audio_cmd
@@ -153,9 +160,16 @@ pub fn update(app: &mut App, message: Message) {
                 match status {
                     AudioStatus::Position(pos) => {
                         app.position = pos;
-                        app.seek_position = pos;
+                        if !app.is_seeking {
+                            app.seek_position = pos;
+                        }
                     }
                     AudioStatus::Duration(dur) => app.duration = dur,
+                    AudioStatus::PlaybackEnded => {
+                        app.state = PlaybackState::Stopped;
+                        app.is_seeking = false;
+                        app.seek_position = app.position;
+                    }
                     AudioStatus::Metadata {
                         title,
                         artist,
@@ -311,9 +325,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .spacing(8)
     .align_y(Alignment::Center);
 
+    let display_position = if app.is_seeking {
+        app.seek_position
+    } else {
+        app.position
+    };
+
     let sliders_row = row![
         seek_slider,
-        text(format!("{:.1}/{:.1}", app.position, app.duration)).color(TEXT_ALT),
+        text(format!("{:.1}/{:.1}", display_position, app.duration)).color(TEXT_ALT),
         volume_block,
     ]
     .spacing(8)

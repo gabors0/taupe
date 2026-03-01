@@ -1,6 +1,6 @@
 mod app;
 
-pub use app::{view, App, Message};
+pub use app::{App, Message, view};
 
 pub fn update(app: &mut App, message: Message) -> iced::Task<Message> {
     app::update(app, message);
