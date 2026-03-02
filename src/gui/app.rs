@@ -297,6 +297,18 @@ pub fn update(app: &mut App, message: Message) {
     }
 }
 
+fn format_time(seconds: f32) -> String {
+    let secs = seconds as u32;
+    let h = secs / 3600;
+    let m = (secs % 3600) / 60;
+    let s = secs % 60;
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 pub fn view(app: &App) -> Element<'_, Message> {
     // -- seperator ----------------------
     let separator = || {
@@ -415,7 +427,6 @@ pub fn view(app: &App) -> Element<'_, Message> {
     //   [seek -----o--------------------------------- pos/dur][vol% ----o-]
     //   |     spacer     [Load] [..] [Play/Pause] [Stop]       spacer     |
     let buttons_row = row![
-        Space::new().width(Length::Fill),
         load_btn,
         load_folder_btn,
         prev_btn,
@@ -423,6 +434,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         stop_btn,
         next_btn,
         Space::new().width(Length::Fill),
+        volume_block,
     ]
     .spacing(8)
     .align_y(Alignment::Center);
@@ -435,8 +447,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let sliders_row = row![
         seek_slider,
-        text(format!("{:.1}/{:.1}", display_position, app.duration)).color(TEXT_ALT),
-        volume_block,
+        text(format!("{}/{}", format_time(display_position), format_time(app.duration))).color(TEXT_ALT),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
