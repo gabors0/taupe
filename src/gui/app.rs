@@ -367,7 +367,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .width(Length::Fill);
 
     // -- row 1 -------------------------------------------------
-    let format_label = app.file_format.as_deref().unwrap_or("<format label>");
+    let format_label = app.file_format.as_deref().unwrap_or("<format>");
 
     let mut now_playing_children: Vec<Element<'_, Message>> = Vec::new();
 
@@ -439,7 +439,12 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let sliders_row = row![
         seek_slider,
-        text(format!("{}/{}", format_time(display_position), format_time(app.duration))).color(TEXT_ALT),
+        text(format!(
+            "{}/{}",
+            format_time(display_position),
+            format_time(app.duration)
+        ))
+        .color(TEXT_ALT),
     ]
     .spacing(8)
     .align_y(Alignment::Center);
