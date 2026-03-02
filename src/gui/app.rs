@@ -204,14 +204,6 @@ pub fn update(app: &mut App, message: Message) {
             app.position = 0.0;
             app.seek_position = 0.0;
             app.is_seeking = false;
-            app.duration = 0.0;
-            app.title = None;
-            app.artist = None;
-            app.album = None;
-            app.track_no = None;
-            app.disc_no = None;
-            app.picture_handle = None;
-            app.file_format = None;
         }
         Message::VolValueChanged(value) => {
             app.volume = value;
