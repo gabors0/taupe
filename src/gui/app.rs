@@ -11,6 +11,25 @@ const TEXT_ALT: Color = Color::from_rgb(0.682, 0.631, 0.596);
 // const WARNING: Color = Color::from_rgb(0.855, 0.851, 0.525);
 // const DANGER: Color = Color::from_rgb(0.847, 0.584, 0.584);
 
+fn scan_audio_files(dir: &std::path::Path) -> Vec<PathBuf> {
+    const AUDIO_EXT: &[&str] = &["flac", "mp3", "wav", "ogg", "m4a"];
+    let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| AUDIO_EXT.contains(&e.to_ascii_lowercase().as_str()))
+                    .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files
+}
+
 fn icon(path: &str) -> svg::Svg<'_> {
     svg(path)
         .width(Length::Fixed(16.0))
@@ -20,6 +39,7 @@ fn icon(path: &str) -> svg::Svg<'_> {
 
 use rfd::FileDialog;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -27,6 +47,8 @@ pub struct App {
     audio_cmd: Sender<AudioCommand>,
     pub status_rx: Rc<RefCell<Receiver<AudioStatus>>>,
     current_file: Option<String>,
+    playlist: Vec<PathBuf>,
+    playlist_index: Option<usize>,
     state: PlaybackState,
     volume: f32,
     /// The actual playback position reported by the audio thread (seconds).
@@ -53,6 +75,7 @@ pub struct App {
 #[derive(Debug, Clone)]
 pub enum Message {
     LoadPressed,
+    LoadFolderPressed,
     PlayPressed,
     PausePressed,
     StopPressed,
@@ -61,6 +84,8 @@ pub enum Message {
     SeekMoved(f32),
     /// Slider released – actually performs the seek.
     SeekReleased,
+    PrevPressed,
+    NextPressed,
     Tick,
 }
 
@@ -73,6 +98,8 @@ impl App {
             audio_cmd,
             status_rx,
             current_file: None,
+            playlist: Vec::new(),
+            playlist_index: None,
             state: PlaybackState::Stopped,
             volume: 0.5,
             position: 0.0,
@@ -102,6 +129,59 @@ pub fn update(app: &mut App, message: Message) {
                 .set_directory("/")
                 .pick_file()
             {
+                if let Some(dir) = path.parent() {
+                    app.playlist = scan_audio_files(dir);
+                    app.playlist_index = app.playlist.iter().position(|p| p == &path);
+                } else {
+                    app.playlist = vec![path.clone()];
+                    app.playlist_index = Some(0);
+                }
+                app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
+                let _ = app.audio_cmd.send(AudioCommand::Load(path));
+                app.state = PlaybackState::Playing;
+                app.position = 0.0;
+                app.seek_position = 0.0;
+                app.is_seeking = false;
+            }
+        }
+        Message::LoadFolderPressed => {
+            if let Some(folder) = FileDialog::new().set_directory("/").pick_folder() {
+                let files = scan_audio_files(&folder);
+                if !files.is_empty() {
+                    let path = files[0].clone();
+                    app.playlist = files;
+                    app.playlist_index = Some(0);
+                    app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
+                    let _ = app.audio_cmd.send(AudioCommand::Load(path));
+                    app.state = PlaybackState::Playing;
+                    app.position = 0.0;
+                    app.seek_position = 0.0;
+                    app.is_seeking = false;
+                }
+            }
+        }
+        Message::PrevPressed => {
+            if let Some(idx) = app.playlist_index
+                && idx > 0
+            {
+                let new_idx = idx - 1;
+                let path = app.playlist[new_idx].clone();
+                app.playlist_index = Some(new_idx);
+                app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
+                let _ = app.audio_cmd.send(AudioCommand::Load(path));
+                app.state = PlaybackState::Playing;
+                app.position = 0.0;
+                app.seek_position = 0.0;
+                app.is_seeking = false;
+            }
+        }
+        Message::NextPressed => {
+            if let Some(idx) = app.playlist_index
+                && idx + 1 < app.playlist.len()
+            {
+                let new_idx = idx + 1;
+                let path = app.playlist[new_idx].clone();
+                app.playlist_index = Some(new_idx);
                 app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
                 let _ = app.audio_cmd.send(AudioCommand::Load(path));
                 app.state = PlaybackState::Playing;
@@ -229,7 +309,26 @@ pub fn view(app: &App) -> Element<'_, Message> {
     };
 
     // -- pre-build widgets ----------------------------------------------------
-    let load_btn = button("Load").on_press(Message::LoadPressed).height(32);
+    let load_btn = button(icon("assets/icons/load.svg"))
+        .on_press(Message::LoadPressed)
+        .height(32);
+
+    let load_folder_btn = button(icon("assets/icons/folder.svg"))
+        .on_press(Message::LoadFolderPressed)
+        .height(32);
+
+    let can_prev = app.playlist_index.is_some_and(|i| i > 0);
+    let can_next = app
+        .playlist_index
+        .is_some_and(|i| i + 1 < app.playlist.len());
+
+    let prev_btn = button(icon("assets/icons/prev.svg"))
+        .on_press_maybe(can_prev.then_some(Message::PrevPressed))
+        .height(32);
+
+    let next_btn = button(icon("assets/icons/next.svg"))
+        .on_press_maybe(can_next.then_some(Message::NextPressed))
+        .height(32);
 
     let play_pause_btn = match app.state {
         PlaybackState::Playing => button(icon("assets/icons/pause.svg"))
@@ -314,12 +413,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     // -- row 2 -----------------------------
     //   [seek -----o--------------------------------- pos/dur][vol% ----o-]
-    //   |      spacer      [Load] [Play/Pause] [Stop]        spacer       |
+    //   |     spacer     [Load] [..] [Play/Pause] [Stop]       spacer     |
     let buttons_row = row![
         Space::new().width(Length::Fill),
         load_btn,
+        load_folder_btn,
+        prev_btn,
         play_pause_btn,
         stop_btn,
+        next_btn,
         Space::new().width(Length::Fill),
     ]
     .spacing(8)
