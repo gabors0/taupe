@@ -1,13 +1,19 @@
 use crate::audio::{AudioCommand, AudioStatus, PlaybackState};
 use ::image::ImageFormat;
-use iced::widget::{Row, Space, button, column, container, image, row, rule, slider, svg, text};
-use iced::{Alignment, Color, Element, Length};
+use iced::widget::{
+    Row, Space, button, column, container, image, mouse_area, row, rule, scrollable, slider, svg,
+    table, text,
+};
+use iced::{Alignment, Background, Color, Element, Length};
+use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::probe::Probe;
+use lofty::tag::Accessor;
 
 const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
 const BG_ALT: Color = Color::from_rgb(0.388, 0.361, 0.333);
 const TEXT: Color = Color::from_rgb(0.851, 0.851, 0.851);
 const TEXT_ALT: Color = Color::from_rgb(0.682, 0.631, 0.596);
-// const SUCCESS: Color = Color::from_rgb(0.48, 0.54, 0.41);
+const GREEN: Color = Color::from_rgb(0.604, 0.800, 0.612);
 // const WARNING: Color = Color::from_rgb(0.855, 0.851, 0.525);
 // const DANGER: Color = Color::from_rgb(0.847, 0.584, 0.584);
 
@@ -30,6 +36,49 @@ fn scan_audio_files(dir: &std::path::Path) -> Vec<PathBuf> {
     files
 }
 
+#[derive(Clone)]
+struct TrackInfo {
+    index: usize,
+    path: PathBuf,
+    title: Option<String>,
+    artist: Option<String>,
+    album: Option<String>,
+    track_no: Option<u16>,
+    duration_secs: Option<f32>,
+}
+
+fn scan_track_metadata(files: &[PathBuf]) -> Vec<TrackInfo> {
+    files
+        .iter()
+        .enumerate()
+        .map(|(index, path)| {
+            if let Ok(tagged_file) = Probe::open(path).and_then(|p| p.read()) {
+                let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+                let properties = tagged_file.properties();
+                TrackInfo {
+                    index,
+                    path: path.clone(),
+                    title: tag.as_ref().and_then(|t| t.title().map(|s| s.into_owned())),
+                    artist: tag.as_ref().and_then(|t| t.artist().map(|s| s.into_owned())),
+                    album: tag.as_ref().and_then(|t| t.album().map(|s| s.into_owned())),
+                    track_no: tag.as_ref().and_then(|t| t.track().map(|v| v as u16)),
+                    duration_secs: Some(properties.duration().as_secs_f32()),
+                }
+            } else {
+                TrackInfo {
+                    index,
+                    path: path.clone(),
+                    title: None,
+                    artist: None,
+                    album: None,
+                    track_no: None,
+                    duration_secs: None,
+                }
+            }
+        })
+        .collect()
+}
+
 fn icon(path: &str) -> svg::Svg<'_> {
     svg(path)
         .width(Length::Fixed(16.0))
@@ -38,8 +87,8 @@ fn icon(path: &str) -> svg::Svg<'_> {
 }
 
 use rfd::FileDialog;
-use std::cell::RefCell;
 use std::path::PathBuf;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -49,6 +98,8 @@ pub struct App {
     current_file: Option<String>,
     playlist: Vec<PathBuf>,
     playlist_index: Option<usize>,
+    tracks: Vec<TrackInfo>,
+    selected_index: Option<usize>,
     state: PlaybackState,
     volume: f32,
     /// The actual playback position reported by the audio thread (seconds).
@@ -86,6 +137,8 @@ pub enum Message {
     SeekReleased,
     PrevPressed,
     NextPressed,
+    PlaylistRowClicked(usize),
+    PlaylistRowDoubleClicked(usize),
     Tick,
 }
 
@@ -100,6 +153,8 @@ impl App {
             current_file: None,
             playlist: Vec::new(),
             playlist_index: None,
+            tracks: Vec::new(),
+            selected_index: None,
             state: PlaybackState::Stopped,
             volume: 0.5,
             position: 0.0,
@@ -136,6 +191,8 @@ pub fn update(app: &mut App, message: Message) {
                     app.playlist = vec![path.clone()];
                     app.playlist_index = Some(0);
                 }
+                app.tracks = scan_track_metadata(&app.playlist);
+                app.selected_index = app.playlist_index;
                 app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
                 let _ = app.audio_cmd.send(AudioCommand::Load(path));
                 app.state = PlaybackState::Playing;
@@ -151,6 +208,8 @@ pub fn update(app: &mut App, message: Message) {
                     let path = files[0].clone();
                     app.playlist = files;
                     app.playlist_index = Some(0);
+                    app.tracks = scan_track_metadata(&app.playlist);
+                    app.selected_index = Some(0);
                     app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
                     let _ = app.audio_cmd.send(AudioCommand::Load(path));
                     app.state = PlaybackState::Playing;
@@ -167,6 +226,7 @@ pub fn update(app: &mut App, message: Message) {
                 let new_idx = idx - 1;
                 let path = app.playlist[new_idx].clone();
                 app.playlist_index = Some(new_idx);
+                app.selected_index = Some(new_idx);
                 app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
                 let _ = app.audio_cmd.send(AudioCommand::Load(path));
                 app.state = PlaybackState::Playing;
@@ -182,6 +242,7 @@ pub fn update(app: &mut App, message: Message) {
                 let new_idx = idx + 1;
                 let path = app.playlist[new_idx].clone();
                 app.playlist_index = Some(new_idx);
+                app.selected_index = Some(new_idx);
                 app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
                 let _ = app.audio_cmd.send(AudioCommand::Load(path));
                 app.state = PlaybackState::Playing;
@@ -221,6 +282,20 @@ pub fn update(app: &mut App, message: Message) {
             let _ = app
                 .audio_cmd
                 .send(AudioCommand::Seek(app.seek_position * 1000.0));
+        }
+        Message::PlaylistRowClicked(idx) => {
+            app.selected_index = Some(idx);
+        }
+        Message::PlaylistRowDoubleClicked(idx) => {
+            let path = app.playlist[idx].clone();
+            app.playlist_index = Some(idx);
+            app.selected_index = Some(idx);
+            app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
+            let _ = app.audio_cmd.send(AudioCommand::Load(path));
+            app.state = PlaybackState::Playing;
+            app.position = 0.0;
+            app.seek_position = 0.0;
+            app.is_seeking = false;
         }
         Message::Tick => {
             // Drain all pending status updates from the audio thread.
@@ -451,8 +526,127 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     let controls_block = column![sliders_row, buttons_row].spacing(6);
 
-    // -- row 3 (under construction) ----------------------------------------
-    let empty = Space::new().height(Length::Fill);
+    // -- row 3: playlist table ----------------------------------------
+    let playing_idx = app.playlist_index;
+    let selected_idx = app.selected_index;
+
+    fn row_bg(idx: usize, playing_idx: Option<usize>, selected_idx: Option<usize>) -> Option<Background> {
+        if Some(idx) == playing_idx {
+            Some(Background::Color(Color::from_rgba(0.604, 0.800, 0.612, 0.15)))
+        } else if Some(idx) == selected_idx {
+            Some(Background::Color(BG_ALT))
+        } else {
+            None
+        }
+    }
+
+    let playlist_table = table(
+        [
+            table::column(text("#").color(TEXT_ALT), move |track: TrackInfo| {
+                let idx = track.index;
+                let bg = row_bg(idx, playing_idx, selected_idx);
+                let num = track.track_no.map_or(idx + 1, |n| n as usize);
+                let color = if Some(idx) == playing_idx { GREEN } else { TEXT_ALT };
+                mouse_area(
+                    container(text(format!("{num}")).color(color))
+                        .width(Length::Fill)
+                        .padding([5, 10])
+                        .style(move |_| iced::widget::container::Style {
+                            background: bg,
+                            ..Default::default()
+                        }),
+                )
+                .on_press(Message::PlaylistRowClicked(idx))
+                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+            })
+            .width(Length::Fixed(40.0))
+            .align_x(Alignment::End),
+            table::column(text("Title").color(TEXT_ALT), move |track: TrackInfo| {
+                let idx = track.index;
+                let bg = row_bg(idx, playing_idx, selected_idx);
+                let label_str = track.title.unwrap_or_else(|| {
+                    track
+                        .path
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("?")
+                        .to_string()
+                });
+                let color = if Some(idx) == playing_idx { GREEN } else { TEXT };
+                mouse_area(
+                    container(text(label_str).color(color))
+                        .width(Length::Fill)
+                        .padding([5, 10])
+                        .style(move |_| iced::widget::container::Style {
+                            background: bg,
+                            ..Default::default()
+                        }),
+                )
+                .on_press(Message::PlaylistRowClicked(idx))
+                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+            })
+            .width(Length::Fill),
+            table::column(text("Artist").color(TEXT_ALT), move |track: TrackInfo| {
+                let idx = track.index;
+                let bg = row_bg(idx, playing_idx, selected_idx);
+                mouse_area(
+                    container(text(track.artist.unwrap_or_default()).color(TEXT_ALT))
+                        .width(Length::Fill)
+                        .padding([5, 10])
+                        .style(move |_| iced::widget::container::Style {
+                            background: bg,
+                            ..Default::default()
+                        }),
+                )
+                .on_press(Message::PlaylistRowClicked(idx))
+                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+            })
+            .width(Length::FillPortion(2)),
+            table::column(text("Album").color(TEXT_ALT), move |track: TrackInfo| {
+                let idx = track.index;
+                let bg = row_bg(idx, playing_idx, selected_idx);
+                mouse_area(
+                    container(text(track.album.unwrap_or_default()).color(TEXT_ALT))
+                        .width(Length::Fill)
+                        .padding([5, 10])
+                        .style(move |_| iced::widget::container::Style {
+                            background: bg,
+                            ..Default::default()
+                        }),
+                )
+                .on_press(Message::PlaylistRowClicked(idx))
+                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+            })
+            .width(Length::FillPortion(2)),
+            table::column(text("Duration").color(TEXT_ALT), move |track: TrackInfo| {
+                let idx = track.index;
+                let bg = row_bg(idx, playing_idx, selected_idx);
+                let dur_str = track
+                    .duration_secs
+                    .map_or_else(|| "—".to_string(), format_time);
+                mouse_area(
+                    container(text(dur_str).color(TEXT_ALT))
+                        .width(Length::Fill)
+                        .padding([5, 10])
+                        .style(move |_| iced::widget::container::Style {
+                            background: bg,
+                            ..Default::default()
+                        }),
+                )
+                .on_press(Message::PlaylistRowClicked(idx))
+                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+            })
+            .width(Length::Fixed(60.0))
+            .align_x(Alignment::End),
+        ],
+        app.tracks.iter().cloned(),
+    )
+    .width(Length::Fill)
+    .padding(0)
+    .separator_x(0.0)
+    .separator_y(0.0);
+
+    let playlist_view = scrollable(playlist_table).height(Length::Fill);
 
     // -- main ---------------------------------------------------------
     column![
@@ -460,7 +654,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         separator(),
         controls_block,
         separator(),
-        empty,
+        playlist_view,
     ]
     .spacing(16)
     .padding(16)
