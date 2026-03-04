@@ -18,7 +18,6 @@
   - [x] aac
   - [x] m4a/mp4
   - [x] aiff
-  - [x] caf
   
 </details>
 <details>
@@ -29,7 +28,7 @@
   - [x] Volume
   - [x] Seek
   - [x] Get metadata of songs
-  - [ ] Playback queue
+  - [x] Playback queue
   - [ ] Shuffle
   - [ ] Repeat (one/all)
    
