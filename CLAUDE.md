@@ -11,7 +11,7 @@ cargo clippy            # Lint
 cargo fmt -- --check    # Check formatting
 ```
 
-There are no tests currently in the project.
+Unit tests exist in `src/audio.rs` (cover `pick_picture_index` logic). Run with `cargo test`.
 
 ## Architecture
 
@@ -31,8 +31,25 @@ The app runs two threads that communicate via `mpsc` channels:
 enum AudioCommand { Load(PathBuf), Play, Pause, Stop, Seek(f32 /*ms*/), SetVolume(f32) }
 
 // Status sent Audio → GUI
-enum AudioStatus { Position(f32 /*sec*/), Duration(f32), PlaybackEnded, Metadata { .. } }
+enum AudioStatus {
+    Position(f32 /*sec*/), Duration(f32), PlaybackEnded,
+    Metadata { title, artist, album, track_no, disc_no, picture: Option<(Vec<u8>, String)>,
+               sample_rate_hz, bitrate_kbps, channels, bit_depth, file_format }
+}
+
+enum PlaybackState { Stopped, Playing, Paused }
+
+// Per-track info scanned at folder load time
+struct TrackInfo { index, path, title, artist, album, track_no, duration_secs }
 ```
+
+### Playlist & Auto-Advance
+
+- Loading a file or folder scans all audio files in the directory and builds `App::playlist` (sorted `Vec<PathBuf>`) + `App::tracks` (`Vec<TrackInfo>`, metadata read upfront via lofty).
+- `App::playlist_index` tracks the currently playing track; `App::selected_index` tracks the highlighted row (can differ).
+- On `PlaybackEnded`, the GUI auto-advances to the next track (`play_track(app, idx + 1)`) if one exists; otherwise stops.
+- Double-clicking a playlist row fires `PlaylistRowDoubleClicked(idx)` → `play_track`.
+- The playlist table uses `iced::widget::table` with responsive column sizing; wide layout (≥750px) shows Artist and Album columns.
 
 ### Seek Interaction Pattern
 
