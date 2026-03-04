@@ -4,7 +4,7 @@ version = "0.1.2"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.14.0", features = ["tokio", "svg", "image"] }
+iced = { version = "0.14.0", features = ["tokio", "svg", "image", "lazy"] }
 lofty = "0.23.2"
 rfd = "0.17.2"
 rodio = { version = "0.21.1", features = ["symphonia-all"] }

@@ -1,8 +1,8 @@
 use crate::audio::{AudioCommand, AudioStatus, PlaybackState};
 use ::image::ImageFormat;
 use iced::widget::{
-    Row, Space, button, column, container, image, mouse_area, row, rule, scrollable, slider, svg,
-    table, text,
+    Row, Space, button, column, container, image, mouse_area, responsive, row, rule, scrollable,
+    slider, svg, table, text,
 };
 use iced::{Alignment, Background, Color, Element, Length};
 use lofty::file::{AudioFile, TaggedFileExt};
@@ -53,13 +53,17 @@ fn scan_track_metadata(files: &[PathBuf]) -> Vec<TrackInfo> {
         .enumerate()
         .map(|(index, path)| {
             if let Ok(tagged_file) = Probe::open(path).and_then(|p| p.read()) {
-                let tag = tagged_file.primary_tag().or_else(|| tagged_file.first_tag());
+                let tag = tagged_file
+                    .primary_tag()
+                    .or_else(|| tagged_file.first_tag());
                 let properties = tagged_file.properties();
                 TrackInfo {
                     index,
                     path: path.clone(),
                     title: tag.as_ref().and_then(|t| t.title().map(|s| s.into_owned())),
-                    artist: tag.as_ref().and_then(|t| t.artist().map(|s| s.into_owned())),
+                    artist: tag
+                        .as_ref()
+                        .and_then(|t| t.artist().map(|s| s.into_owned())),
                     album: tag.as_ref().and_then(|t| t.album().map(|s| s.into_owned())),
                     track_no: tag.as_ref().and_then(|t| t.track().map(|v| v as u16)),
                     duration_secs: Some(properties.duration().as_secs_f32()),
@@ -87,8 +91,8 @@ fn icon(path: &str) -> svg::Svg<'_> {
 }
 
 use rfd::FileDialog;
-use std::path::PathBuf;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -176,6 +180,18 @@ impl App {
     }
 }
 
+fn play_track(app: &mut App, idx: usize) {
+    let path = app.playlist[idx].clone();
+    app.playlist_index = Some(idx);
+    app.selected_index = Some(idx);
+    app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
+    let _ = app.audio_cmd.send(AudioCommand::Load(path));
+    app.state = PlaybackState::Playing;
+    app.position = 0.0;
+    app.seek_position = 0.0;
+    app.is_seeking = false;
+}
+
 pub fn update(app: &mut App, message: Message) {
     match message {
         Message::LoadPressed => {
@@ -192,30 +208,18 @@ pub fn update(app: &mut App, message: Message) {
                     app.playlist_index = Some(0);
                 }
                 app.tracks = scan_track_metadata(&app.playlist);
-                app.selected_index = app.playlist_index;
-                app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
-                let _ = app.audio_cmd.send(AudioCommand::Load(path));
-                app.state = PlaybackState::Playing;
-                app.position = 0.0;
-                app.seek_position = 0.0;
-                app.is_seeking = false;
+                if let Some(idx) = app.playlist_index {
+                    play_track(app, idx);
+                }
             }
         }
         Message::LoadFolderPressed => {
             if let Some(folder) = FileDialog::new().set_directory("/").pick_folder() {
                 let files = scan_audio_files(&folder);
                 if !files.is_empty() {
-                    let path = files[0].clone();
                     app.playlist = files;
-                    app.playlist_index = Some(0);
                     app.tracks = scan_track_metadata(&app.playlist);
-                    app.selected_index = Some(0);
-                    app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
-                    let _ = app.audio_cmd.send(AudioCommand::Load(path));
-                    app.state = PlaybackState::Playing;
-                    app.position = 0.0;
-                    app.seek_position = 0.0;
-                    app.is_seeking = false;
+                    play_track(app, 0);
                 }
             }
         }
@@ -223,32 +227,14 @@ pub fn update(app: &mut App, message: Message) {
             if let Some(idx) = app.playlist_index
                 && idx > 0
             {
-                let new_idx = idx - 1;
-                let path = app.playlist[new_idx].clone();
-                app.playlist_index = Some(new_idx);
-                app.selected_index = Some(new_idx);
-                app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
-                let _ = app.audio_cmd.send(AudioCommand::Load(path));
-                app.state = PlaybackState::Playing;
-                app.position = 0.0;
-                app.seek_position = 0.0;
-                app.is_seeking = false;
+                play_track(app, idx - 1);
             }
         }
         Message::NextPressed => {
             if let Some(idx) = app.playlist_index
                 && idx + 1 < app.playlist.len()
             {
-                let new_idx = idx + 1;
-                let path = app.playlist[new_idx].clone();
-                app.playlist_index = Some(new_idx);
-                app.selected_index = Some(new_idx);
-                app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
-                let _ = app.audio_cmd.send(AudioCommand::Load(path));
-                app.state = PlaybackState::Playing;
-                app.position = 0.0;
-                app.seek_position = 0.0;
-                app.is_seeking = false;
+                play_track(app, idx + 1);
             }
         }
         Message::PlayPressed => {
@@ -287,15 +273,7 @@ pub fn update(app: &mut App, message: Message) {
             app.selected_index = Some(idx);
         }
         Message::PlaylistRowDoubleClicked(idx) => {
-            let path = app.playlist[idx].clone();
-            app.playlist_index = Some(idx);
-            app.selected_index = Some(idx);
-            app.current_file = path.file_name().map(|n| n.to_string_lossy().to_string());
-            let _ = app.audio_cmd.send(AudioCommand::Load(path));
-            app.state = PlaybackState::Playing;
-            app.position = 0.0;
-            app.seek_position = 0.0;
-            app.is_seeking = false;
+            play_track(app, idx);
         }
         Message::Tick => {
             // Drain all pending status updates from the audio thread.
@@ -313,9 +291,15 @@ pub fn update(app: &mut App, message: Message) {
                     }
                     AudioStatus::Duration(dur) => app.duration = dur,
                     AudioStatus::PlaybackEnded => {
-                        app.state = PlaybackState::Stopped;
-                        app.is_seeking = false;
-                        app.seek_position = app.position;
+                        if let Some(idx) = app.playlist_index
+                            && idx + 1 < app.playlist.len()
+                        {
+                            play_track(app, idx + 1);
+                        } else {
+                            app.state = PlaybackState::Stopped;
+                            app.is_seeking = false;
+                            app.seek_position = app.position;
+                        }
                     }
                     AudioStatus::Metadata {
                         title,
@@ -530,9 +514,15 @@ pub fn view(app: &App) -> Element<'_, Message> {
     let playing_idx = app.playlist_index;
     let selected_idx = app.selected_index;
 
-    fn row_bg(idx: usize, playing_idx: Option<usize>, selected_idx: Option<usize>) -> Option<Background> {
+    fn row_bg(
+        idx: usize,
+        playing_idx: Option<usize>,
+        selected_idx: Option<usize>,
+    ) -> Option<Background> {
         if Some(idx) == playing_idx {
-            Some(Background::Color(Color::from_rgba(0.604, 0.800, 0.612, 0.15)))
+            Some(Background::Color(Color::from_rgba(
+                0.604, 0.800, 0.612, 0.15,
+            )))
         } else if Some(idx) == selected_idx {
             Some(Background::Color(BG_ALT))
         } else {
@@ -540,13 +530,61 @@ pub fn view(app: &App) -> Element<'_, Message> {
         }
     }
 
-    let playlist_table = table(
-        [
-            table::column(text("#").color(TEXT_ALT), move |track: TrackInfo| {
+    // calculate width of columns
+    let max_num_len = app
+        .tracks
+        .iter()
+        .map(|t| t.track_no.map_or(t.index + 1, |n| n as usize))
+        .max()
+        .unwrap_or(1)
+        .to_string()
+        .len()
+        .max(1); // "#" header
+    let max_artist_len = app
+        .tracks
+        .iter()
+        .filter_map(|t| t.artist.as_ref())
+        .map(|s| s.len())
+        .max()
+        .unwrap_or(0)
+        .max(6); // "Artist" header
+    let max_album_len = app
+        .tracks
+        .iter()
+        .filter_map(|t| t.album.as_ref())
+        .map(|s| s.len())
+        .max()
+        .unwrap_or(0)
+        .max(5); // "Album" header
+    let max_dur_len = app
+        .tracks
+        .iter()
+        .filter_map(|t| t.duration_secs)
+        .map(|d| format_time(d).len())
+        .max()
+        .unwrap_or(0)
+        .max(8); // "Duration" header
+
+    let num_w = (max_num_len as f32 * 7.5 + 20.0).min(60.0);
+    let artist_w = (max_artist_len as f32 * 7.5 + 40.0).min(250.0);
+    let album_w = (max_album_len as f32 * 7.5 + 40.0).min(250.0);
+    let dur_w = (max_dur_len as f32 * 7.5 + 20.0).min(100.0);
+
+    let tracks = app.tracks.clone();
+    let playlist_view = responsive(move |size| {
+        let wide = size.width >= 750.0;
+
+        let num_col = table::column(
+            container(text("#").color(TEXT)).padding([5, 10]),
+            move |track: TrackInfo| {
                 let idx = track.index;
                 let bg = row_bg(idx, playing_idx, selected_idx);
                 let num = track.track_no.map_or(idx + 1, |n| n as usize);
-                let color = if Some(idx) == playing_idx { GREEN } else { TEXT_ALT };
+                let color = if Some(idx) == playing_idx {
+                    GREEN
+                } else {
+                    TEXT_ALT
+                };
                 mouse_area(
                     container(text(format!("{num}")).color(color))
                         .width(Length::Fill)
@@ -558,10 +596,14 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 )
                 .on_press(Message::PlaylistRowClicked(idx))
                 .on_double_click(Message::PlaylistRowDoubleClicked(idx))
-            })
-            .width(Length::Fixed(40.0))
-            .align_x(Alignment::End),
-            table::column(text("Title").color(TEXT_ALT), move |track: TrackInfo| {
+            },
+        )
+        .width(Length::Fixed(num_w))
+        .align_x(Alignment::End);
+
+        let title_col = table::column(
+            container(text("Title").color(TEXT)).padding([5, 10]),
+            move |track: TrackInfo| {
                 let idx = track.index;
                 let bg = row_bg(idx, playing_idx, selected_idx);
                 let label_str = track.title.unwrap_or_else(|| {
@@ -572,7 +614,11 @@ pub fn view(app: &App) -> Element<'_, Message> {
                         .unwrap_or("?")
                         .to_string()
                 });
-                let color = if Some(idx) == playing_idx { GREEN } else { TEXT };
+                let color = if Some(idx) == playing_idx {
+                    GREEN
+                } else {
+                    TEXT
+                };
                 mouse_area(
                     container(text(label_str).color(color))
                         .width(Length::Fill)
@@ -584,48 +630,20 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 )
                 .on_press(Message::PlaylistRowClicked(idx))
                 .on_double_click(Message::PlaylistRowDoubleClicked(idx))
-            })
-            .width(Length::Fill),
-            table::column(text("Artist").color(TEXT_ALT), move |track: TrackInfo| {
-                let idx = track.index;
-                let bg = row_bg(idx, playing_idx, selected_idx);
-                mouse_area(
-                    container(text(track.artist.unwrap_or_default()).color(TEXT_ALT))
-                        .width(Length::Fill)
-                        .padding([5, 10])
-                        .style(move |_| iced::widget::container::Style {
-                            background: bg,
-                            ..Default::default()
-                        }),
-                )
-                .on_press(Message::PlaylistRowClicked(idx))
-                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
-            })
-            .width(Length::FillPortion(2)),
-            table::column(text("Album").color(TEXT_ALT), move |track: TrackInfo| {
-                let idx = track.index;
-                let bg = row_bg(idx, playing_idx, selected_idx);
-                mouse_area(
-                    container(text(track.album.unwrap_or_default()).color(TEXT_ALT))
-                        .width(Length::Fill)
-                        .padding([5, 10])
-                        .style(move |_| iced::widget::container::Style {
-                            background: bg,
-                            ..Default::default()
-                        }),
-                )
-                .on_press(Message::PlaylistRowClicked(idx))
-                .on_double_click(Message::PlaylistRowDoubleClicked(idx))
-            })
-            .width(Length::FillPortion(2)),
-            table::column(text("Duration").color(TEXT_ALT), move |track: TrackInfo| {
+            },
+        )
+        .width(Length::Fill);
+
+        let dur_col = table::column(
+            container(text("Duration").color(TEXT)).padding([5, 10]),
+            move |track: TrackInfo| {
                 let idx = track.index;
                 let bg = row_bg(idx, playing_idx, selected_idx);
                 let dur_str = track
                     .duration_secs
                     .map_or_else(|| "—".to_string(), format_time);
                 mouse_area(
-                    container(text(dur_str).color(TEXT_ALT))
+                    container(text(dur_str).color(TEXT))
                         .width(Length::Fill)
                         .padding([5, 10])
                         .style(move |_| iced::widget::container::Style {
@@ -635,18 +653,73 @@ pub fn view(app: &App) -> Element<'_, Message> {
                 )
                 .on_press(Message::PlaylistRowClicked(idx))
                 .on_double_click(Message::PlaylistRowDoubleClicked(idx))
-            })
-            .width(Length::Fixed(60.0))
-            .align_x(Alignment::End),
-        ],
-        app.tracks.iter().cloned(),
-    )
-    .width(Length::Fill)
-    .padding(0)
-    .separator_x(0.0)
-    .separator_y(0.0);
+            },
+        )
+        .width(Length::Fixed(dur_w))
+        .align_x(Alignment::End);
 
-    let playlist_view = scrollable(playlist_table).height(Length::Fill);
+        let playlist_table: Element<Message> = if wide {
+            let artist_col = table::column(
+                container(text("Artist").color(TEXT)).padding([5, 10]),
+                move |track: TrackInfo| {
+                    let idx = track.index;
+                    let bg = row_bg(idx, playing_idx, selected_idx);
+                    mouse_area(
+                        container(text(track.artist.unwrap_or_default()).color(TEXT_ALT))
+                            .width(Length::Fill)
+                            .padding([5, 10])
+                            .style(move |_| iced::widget::container::Style {
+                                background: bg,
+                                ..Default::default()
+                            }),
+                    )
+                    .on_press(Message::PlaylistRowClicked(idx))
+                    .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+                },
+            )
+            .width(Length::Fixed(artist_w));
+
+            let album_col = table::column(
+                container(text("Album").color(TEXT)).padding([5, 10]),
+                move |track: TrackInfo| {
+                    let idx = track.index;
+                    let bg = row_bg(idx, playing_idx, selected_idx);
+                    mouse_area(
+                        container(text(track.album.unwrap_or_default()).color(TEXT_ALT))
+                            .width(Length::Fill)
+                            .padding([5, 10])
+                            .style(move |_| iced::widget::container::Style {
+                                background: bg,
+                                ..Default::default()
+                            }),
+                    )
+                    .on_press(Message::PlaylistRowClicked(idx))
+                    .on_double_click(Message::PlaylistRowDoubleClicked(idx))
+                },
+            )
+            .width(Length::Fixed(album_w));
+
+            table(
+                [num_col, title_col, artist_col, album_col, dur_col],
+                tracks.iter().cloned(),
+            )
+            .width(Length::Fill)
+            .padding(0)
+            .separator_x(0.0)
+            .separator_y(0.0)
+            .into()
+        } else {
+            table([num_col, title_col, dur_col], tracks.iter().cloned())
+                .width(Length::Fill)
+                .padding(0)
+                .separator_x(0.0)
+                .separator_y(0.0)
+                .into()
+        };
+
+        scrollable(playlist_table).height(Length::Fill).into()
+    })
+    .height(Length::Fill);
 
     // -- main ---------------------------------------------------------
     column![

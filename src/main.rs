@@ -61,7 +61,7 @@ fn main() -> iced::Result {
     .title("Taupe")
     .theme(theme_fn)
     .window(window::Settings {
-        min_size: Some(iced::Size::new(500.0, 300.0)),
+        min_size: Some(iced::Size::new(500.0, 550.0)),
         ..window::Settings::default()
     })
     .run()
