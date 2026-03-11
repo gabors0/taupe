@@ -1,6 +1,8 @@
+use lofty::config::ParseOptions;
 use lofty::file::AudioFile;
 use lofty::file::FileType;
 use lofty::file::TaggedFileExt;
+use lofty::mp4::{Mp4Codec, Mp4File};
 use lofty::picture::PictureType;
 use lofty::probe::Probe;
 use lofty::tag::{Accessor, Tag};
@@ -89,7 +91,19 @@ fn send_metadata(status_tx: &Sender<AudioStatus>, path: &Path) {
             FileType::Flac => Some("flac".to_string()),
             FileType::Wav => Some("wav".to_string()),
             FileType::Vorbis => Some("ogg".to_string()),
-            FileType::Mp4 => Some("mp4".to_string()),
+            FileType::Mp4 => {
+                let codec_name = std::fs::File::open(path)
+                    .ok()
+                    .and_then(|mut f| Mp4File::read_from(&mut f, ParseOptions::new()).ok())
+                    .map(|mp4| match mp4.properties().codec() {
+                        Mp4Codec::AAC => "AAC",
+                        Mp4Codec::ALAC => "ALAC",
+                        Mp4Codec::MP3 => "MP3",
+                        Mp4Codec::FLAC => "FLAC",
+                        _ => "mp4",
+                    });
+                codec_name.map(|s| s.to_string())
+            }
             FileType::Mpc => Some("mpc".to_string()),
             FileType::Opus => Some("opus".to_string()),
             FileType::Ape => Some("ape".to_string()),

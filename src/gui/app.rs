@@ -8,6 +8,7 @@ use iced::{Alignment, Background, Color, Element, Length};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
+use std::borrow::Cow;
 
 const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
 const BG_ALT: Color = Color::from_rgb(0.388, 0.361, 0.333);
@@ -200,17 +201,10 @@ pub fn update(app: &mut App, message: Message) {
                 .set_directory("/")
                 .pick_file()
             {
-                if let Some(dir) = path.parent() {
-                    app.playlist = scan_audio_files(dir);
-                    app.playlist_index = app.playlist.iter().position(|p| p == &path);
-                } else {
-                    app.playlist = vec![path.clone()];
-                    app.playlist_index = Some(0);
-                }
+                app.playlist = vec![path.clone()];
+                app.playlist_index = Some(0);
                 app.tracks = scan_track_metadata(&app.playlist);
-                if let Some(idx) = app.playlist_index {
-                    play_track(app, idx);
-                }
+                play_track(app, 0);
             }
         }
         Message::LoadFolderPressed => {
@@ -426,8 +420,20 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .width(Length::Fill);
 
     // -- row 1 -------------------------------------------------
-    let format_label = app.file_format.as_deref().unwrap_or("<format>");
-
+    let format_label: Cow<str> = {
+        let ext = app.current_file
+            .as_deref()
+            .and_then(|f| f.rsplit_once('.'))
+            .map(|(_, ext)| ext)
+            .unwrap_or("");
+        let fmt = app.file_format.as_deref().unwrap_or("<format>");
+        if ext.eq_ignore_ascii_case(fmt) {
+            Cow::Borrowed(fmt)
+        } else {
+            Cow::Owned(format!("{ext} ({fmt})"))
+        }
+    };
+    
     let mut now_playing_children: Vec<Element<'_, Message>> = Vec::new();
 
     // if no album art, no space taken up
