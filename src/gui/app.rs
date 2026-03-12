@@ -8,7 +8,9 @@ use iced::{Alignment, Background, Color, Element, Length};
 use lofty::file::{AudioFile, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::Accessor;
+use souvlaki::{MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition};
 use std::borrow::Cow;
+use std::time::Duration;
 
 const BG: Color = Color::from_rgb(0.212, 0.188, 0.169);
 const BG_ALT: Color = Color::from_rgb(0.388, 0.361, 0.333);
@@ -100,6 +102,10 @@ use std::sync::mpsc::{Receiver, Sender};
 pub struct App {
     audio_cmd: Sender<AudioCommand>,
     pub status_rx: Rc<RefCell<Receiver<AudioStatus>>>,
+    media_controls: Rc<RefCell<MediaControls>>,
+    media_event_rx: Rc<RefCell<Receiver<MediaControlEvent>>>,
+    /// Some(tx) means attach() has not been called yet; None means already attached.
+    media_event_tx: Option<Sender<MediaControlEvent>>,
     current_file: Option<String>,
     playlist: Vec<PathBuf>,
     playlist_index: Option<usize>,
@@ -121,6 +127,7 @@ pub struct App {
     track_no: Option<u16>,
     disc_no: Option<u16>,
     picture_handle: Option<image::Handle>,
+    cover_url: Option<String>,
     sample_rate_hz: Option<u32>,
     bitrate_kbps: Option<u32>,
     channels: Option<u8>,
@@ -151,10 +158,16 @@ impl App {
     pub fn new(
         audio_cmd: Sender<AudioCommand>,
         status_rx: Rc<RefCell<Receiver<AudioStatus>>>,
+        media_controls: Rc<RefCell<MediaControls>>,
+        media_event_rx: Rc<RefCell<Receiver<MediaControlEvent>>>,
+        media_event_tx: Sender<MediaControlEvent>,
     ) -> Self {
         App {
             audio_cmd,
             status_rx,
+            media_controls,
+            media_event_rx,
+            media_event_tx: Some(media_event_tx),
             current_file: None,
             playlist: Vec::new(),
             playlist_index: None,
@@ -172,6 +185,7 @@ impl App {
             track_no: None,
             disc_no: None,
             picture_handle: None,
+            cover_url: None,
             sample_rate_hz: None,
             bitrate_kbps: None,
             channels: None,
@@ -193,6 +207,84 @@ fn play_track(app: &mut App, idx: usize) {
     app.is_seeking = false;
 }
 
+fn do_play(app: &mut App) {
+    let _ = app.audio_cmd.send(AudioCommand::Play);
+    app.state = PlaybackState::Playing;
+    update_media_playback(app);
+}
+
+fn do_pause(app: &mut App) {
+    let _ = app.audio_cmd.send(AudioCommand::Pause);
+    app.state = PlaybackState::Paused;
+    update_media_playback(app);
+}
+
+fn do_stop(app: &mut App) {
+    let _ = app.audio_cmd.send(AudioCommand::Stop);
+    app.state = PlaybackState::Stopped;
+    app.position = 0.0;
+    app.seek_position = 0.0;
+    app.is_seeking = false;
+    update_media_playback(app);
+}
+
+fn do_next(app: &mut App) {
+    if let Some(idx) = app.playlist_index
+        && idx + 1 < app.playlist.len()
+    {
+        play_track(app, idx + 1);
+        update_media_playback(app);
+    }
+}
+
+fn do_prev(app: &mut App) {
+    if let Some(idx) = app.playlist_index
+        && idx > 0
+    {
+        play_track(app, idx - 1);
+        update_media_playback(app);
+    }
+}
+
+fn ensure_media_attached(app: &mut App) {
+    if let Some(tx) = app.media_event_tx.take() {
+        let _ = app.media_controls.borrow_mut().attach(move |event| {
+            let _ = tx.send(event);
+        });
+    }
+}
+
+fn update_media_metadata(app: &mut App) {
+    ensure_media_attached(app);
+    let duration = if app.duration > 0.0 {
+        Some(Duration::from_secs_f32(app.duration))
+    } else {
+        None
+    };
+    let metadata = MediaMetadata {
+        title: app.title.as_deref(),
+        artist: app.artist.as_deref(),
+        album: app.album.as_deref(),
+        duration,
+        cover_url: app.cover_url.as_deref(),
+    };
+    let _ = app.media_controls.borrow_mut().set_metadata(metadata);
+}
+
+fn update_media_playback(app: &mut App) {
+    ensure_media_attached(app);
+    let playback = match app.state {
+        PlaybackState::Playing => MediaPlayback::Playing {
+            progress: Some(MediaPosition(Duration::from_secs_f32(app.position))),
+        },
+        PlaybackState::Paused => MediaPlayback::Paused {
+            progress: Some(MediaPosition(Duration::from_secs_f32(app.position))),
+        },
+        PlaybackState::Stopped => MediaPlayback::Stopped,
+    };
+    let _ = app.media_controls.borrow_mut().set_playback(playback);
+}
+
 pub fn update(app: &mut App, message: Message) {
     match message {
         Message::LoadPressed => {
@@ -205,6 +297,7 @@ pub fn update(app: &mut App, message: Message) {
                 app.playlist_index = Some(0);
                 app.tracks = scan_track_metadata(&app.playlist);
                 play_track(app, 0);
+                update_media_playback(app);
             }
         }
         Message::LoadFolderPressed => {
@@ -214,38 +307,15 @@ pub fn update(app: &mut App, message: Message) {
                     app.playlist = files;
                     app.tracks = scan_track_metadata(&app.playlist);
                     play_track(app, 0);
+                    update_media_playback(app);
                 }
             }
         }
-        Message::PrevPressed => {
-            if let Some(idx) = app.playlist_index
-                && idx > 0
-            {
-                play_track(app, idx - 1);
-            }
-        }
-        Message::NextPressed => {
-            if let Some(idx) = app.playlist_index
-                && idx + 1 < app.playlist.len()
-            {
-                play_track(app, idx + 1);
-            }
-        }
-        Message::PlayPressed => {
-            let _ = app.audio_cmd.send(AudioCommand::Play);
-            app.state = PlaybackState::Playing;
-        }
-        Message::PausePressed => {
-            let _ = app.audio_cmd.send(AudioCommand::Pause);
-            app.state = PlaybackState::Paused;
-        }
-        Message::StopPressed => {
-            let _ = app.audio_cmd.send(AudioCommand::Stop);
-            app.state = PlaybackState::Stopped;
-            app.position = 0.0;
-            app.seek_position = 0.0;
-            app.is_seeking = false;
-        }
+        Message::PrevPressed => do_prev(app),
+        Message::NextPressed => do_next(app),
+        Message::PlayPressed => do_play(app),
+        Message::PausePressed => do_pause(app),
+        Message::StopPressed => do_stop(app),
         Message::VolValueChanged(value) => {
             app.volume = value;
             let _ = app.audio_cmd.send(AudioCommand::SetVolume(value));
@@ -268,6 +338,7 @@ pub fn update(app: &mut App, message: Message) {
         }
         Message::PlaylistRowDoubleClicked(idx) => {
             play_track(app, idx);
+            update_media_playback(app);
         }
         Message::Tick => {
             // Drain all pending status updates from the audio thread.
@@ -282,17 +353,23 @@ pub fn update(app: &mut App, message: Message) {
                         if !app.is_seeking {
                             app.seek_position = pos;
                         }
+                        update_media_playback(app);
                     }
-                    AudioStatus::Duration(dur) => app.duration = dur,
+                    AudioStatus::Duration(dur) => {
+                        app.duration = dur;
+                        update_media_metadata(app);
+                    }
                     AudioStatus::PlaybackEnded => {
                         if let Some(idx) = app.playlist_index
                             && idx + 1 < app.playlist.len()
                         {
                             play_track(app, idx + 1);
+                            update_media_playback(app);
                         } else {
                             app.state = PlaybackState::Stopped;
                             app.is_seeking = false;
                             app.seek_position = app.position;
+                            update_media_playback(app);
                         }
                     }
                     AudioStatus::Metadata {
@@ -314,28 +391,82 @@ pub fn update(app: &mut App, message: Message) {
                         app.album = album;
                         app.track_no = track_no;
                         app.disc_no = disc_no;
-                        app.picture_handle = picture.map(|(data, _mime)| {
-                            eprintln!("[GUI] Creating image handle from {} bytes", data.len());
-                            if let Ok(img) = ::image::load_from_memory(&data) {
-                                let resized = img.resize_exact(
-                                    80,
-                                    80,
-                                    ::image::imageops::FilterType::Lanczos3,
-                                );
-                                let mut buffer = Vec::new();
-                                let mut cursor = std::io::Cursor::new(&mut buffer);
-                                if resized.write_to(&mut cursor, ImageFormat::Png).is_ok() {
-                                    return image::Handle::from_bytes(buffer);
-                                }
-                            }
-                            image::Handle::from_bytes(data)
-                        });
                         app.sample_rate_hz = sample_rate_hz;
                         app.bitrate_kbps = bitrate_kbps;
                         app.channels = channels;
                         app.bit_depth = bit_depth;
                         app.file_format = file_format;
+
+                        match picture {
+                            Some((data, _mime)) => {
+                                eprintln!(
+                                    "[GUI] Creating image handle from {} bytes",
+                                    data.len()
+                                );
+                                if let Ok(img) = ::image::load_from_memory(&data) {
+                                    let resized = img.resize_exact(
+                                        80,
+                                        80,
+                                        ::image::imageops::FilterType::Lanczos3,
+                                    );
+                                    let mut buffer = Vec::new();
+                                    let mut cursor = std::io::Cursor::new(&mut buffer);
+                                    if resized.write_to(&mut cursor, ImageFormat::Png).is_ok() {
+                                        let cover_path =
+                                            std::env::temp_dir().join("taupe_cover.png");
+                                        if std::fs::write(&cover_path, &buffer).is_ok() {
+                                            app.cover_url = Some(format!(
+                                                "file://{}",
+                                                cover_path.display()
+                                            ));
+                                        }
+                                        app.picture_handle =
+                                            Some(image::Handle::from_bytes(buffer));
+                                    } else {
+                                        app.picture_handle =
+                                            Some(image::Handle::from_bytes(data));
+                                        app.cover_url = None;
+                                    }
+                                } else {
+                                    app.picture_handle = Some(image::Handle::from_bytes(data));
+                                    app.cover_url = None;
+                                }
+                            }
+                            None => {
+                                app.picture_handle = None;
+                                app.cover_url = None;
+                            }
+                        }
+
+                        update_media_metadata(app);
                     }
+                }
+            }
+
+            // Drain media control events (OS media keys / overlay).
+            let media_events: Vec<_> = {
+                let rx = app.media_event_rx.borrow();
+                std::iter::from_fn(|| rx.try_recv().ok()).collect()
+            };
+            for event in media_events {
+                match event {
+                    MediaControlEvent::Play => do_play(app),
+                    MediaControlEvent::Pause => do_pause(app),
+                    MediaControlEvent::Toggle => match app.state {
+                        PlaybackState::Playing => do_pause(app),
+                        PlaybackState::Paused | PlaybackState::Stopped => do_play(app),
+                    },
+                    MediaControlEvent::Next => do_next(app),
+                    MediaControlEvent::Previous => do_prev(app),
+                    MediaControlEvent::Stop => do_stop(app),
+                    MediaControlEvent::SetPosition(pos) => {
+                        let secs = pos.0.as_secs_f32();
+                        app.position = secs;
+                        app.seek_position = secs;
+                        let _ = app.audio_cmd.send(AudioCommand::Seek(secs * 1000.0));
+                        update_media_playback(app);
+                    }
+                    _ => {}
                 }
             }
         }
@@ -433,7 +564,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
             Cow::Owned(format!("{ext} ({fmt})"))
         }
     };
-    
+
     let mut now_playing_children: Vec<Element<'_, Message>> = Vec::new();
 
     // if no album art, no space taken up

@@ -6,6 +6,7 @@ use gui::Message;
 use iced::Color;
 use iced::theme::Palette;
 use iced::window;
+use souvlaki::{MediaControlEvent, MediaControls, PlatformConfig};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc::{Receiver, Sender};
@@ -42,12 +43,32 @@ fn main() -> iced::Result {
     let status_rx = Rc::new(RefCell::new(status_rx));
     let (audio_cmd, _audio_handle) = spawn_audio_thread(status_tx);
 
+    let (media_event_tx, media_event_rx) = std::sync::mpsc::channel::<MediaControlEvent>();
+    let media_event_rx = Rc::new(RefCell::new(media_event_rx));
+
+    let config = PlatformConfig {
+        dbus_name: "taupe",
+        display_name: "Taupe",
+        hwnd: None,
+    };
+    let controls = MediaControls::new(config).expect("Failed to create media controls");
+    // NOTE: attach() is NOT called here; it is deferred until the first track is loaded.
+    let controls = Rc::new(RefCell::new(controls));
+
     let status_rx_for_init = Rc::clone(&status_rx);
+    let controls_for_init = Rc::clone(&controls);
+    let media_event_rx_for_init = Rc::clone(&media_event_rx);
 
     iced::application(
         move || {
             (
-                gui::App::new(audio_cmd.clone(), status_rx_for_init.clone()),
+                gui::App::new(
+                    audio_cmd.clone(),
+                    status_rx_for_init.clone(),
+                    controls_for_init.clone(),
+                    media_event_rx_for_init.clone(),
+                    media_event_tx.clone(),
+                ),
                 iced::Task::none(),
             )
         },
