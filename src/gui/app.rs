@@ -152,6 +152,11 @@ pub enum Message {
     PlaylistRowClicked(usize),
     PlaylistRowDoubleClicked(usize),
     Tick,
+    TogglePlayPause,
+    VolumeUp,
+    VolumeDown,
+    SeekForward,
+    SeekBackward,
 }
 
 impl App {
@@ -340,6 +345,40 @@ pub fn update(app: &mut App, message: Message) {
             play_track(app, idx);
             update_media_playback(app);
         }
+        Message::TogglePlayPause => match app.state {
+            PlaybackState::Playing => do_pause(app),
+            PlaybackState::Paused | PlaybackState::Stopped => {
+                if app.playlist_index.is_some() {
+                    do_play(app);
+                }
+            }
+        },
+        Message::VolumeUp => {
+            app.volume = (app.volume + 0.05).min(1.0);
+            let _ = app.audio_cmd.send(AudioCommand::SetVolume(app.volume));
+        }
+        Message::VolumeDown => {
+            app.volume = (app.volume - 0.05).max(0.0);
+            let _ = app.audio_cmd.send(AudioCommand::SetVolume(app.volume));
+        }
+        Message::SeekForward => {
+            if app.duration > 0.0 {
+                app.seek_position = (app.seek_position + 5.0).min(app.duration);
+                app.position = app.seek_position;
+                let _ = app
+                    .audio_cmd
+                    .send(AudioCommand::Seek(app.seek_position * 1000.0));
+            }
+        }
+        Message::SeekBackward => {
+            if app.duration > 0.0 {
+                app.seek_position = (app.seek_position - 5.0).max(0.0);
+                app.position = app.seek_position;
+                let _ = app
+                    .audio_cmd
+                    .send(AudioCommand::Seek(app.seek_position * 1000.0));
+            }
+        }
         Message::Tick => {
             // Drain all pending status updates from the audio thread.
             let updates: Vec<_> = {
@@ -399,10 +438,7 @@ pub fn update(app: &mut App, message: Message) {
 
                         match picture {
                             Some((data, _mime)) => {
-                                eprintln!(
-                                    "[GUI] Creating image handle from {} bytes",
-                                    data.len()
-                                );
+                                eprintln!("[GUI] Creating image handle from {} bytes", data.len());
                                 if let Ok(img) = ::image::load_from_memory(&data) {
                                     let resized = img.resize_exact(
                                         80,
@@ -415,16 +451,13 @@ pub fn update(app: &mut App, message: Message) {
                                         let cover_path =
                                             std::env::temp_dir().join("taupe_cover.png");
                                         if std::fs::write(&cover_path, &buffer).is_ok() {
-                                            app.cover_url = Some(format!(
-                                                "file://{}",
-                                                cover_path.display()
-                                            ));
+                                            app.cover_url =
+                                                Some(format!("file://{}", cover_path.display()));
                                         }
                                         app.picture_handle =
                                             Some(image::Handle::from_bytes(buffer));
                                     } else {
-                                        app.picture_handle =
-                                            Some(image::Handle::from_bytes(data));
+                                        app.picture_handle = Some(image::Handle::from_bytes(data));
                                         app.cover_url = None;
                                     }
                                 } else {
@@ -552,7 +585,8 @@ pub fn view(app: &App) -> Element<'_, Message> {
 
     // -- row 1 -------------------------------------------------
     let format_label: Cow<str> = {
-        let ext = app.current_file
+        let ext = app
+            .current_file
             .as_deref()
             .and_then(|f| f.rsplit_once('.'))
             .map(|(_, ext)| ext)
@@ -612,9 +646,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
         .align_y(Alignment::Center);
 
     // -- row 2 -----------------------------
-    //   [seek -----o--------------------------------- pos/dur][vol% ----o-]
-    //   |     spacer     [Load] [..] [Play/Pause] [Stop]       spacer     |
-    let buttons_row = row![
+    //   [seek -----o--------------------------------- pos/dur]    spacer   |
+    //   [Load] [..] [Play/Pause] [Stop]                        [vol% ----o-]
+    let conrols_row = row![
         load_btn,
         load_folder_btn,
         prev_btn,
@@ -633,7 +667,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
         app.position
     };
 
-    let sliders_row = row![
+    let seek_row = row![
         seek_slider,
         text(format!(
             "{}/{}",
@@ -645,7 +679,7 @@ pub fn view(app: &App) -> Element<'_, Message> {
     .spacing(8)
     .align_y(Alignment::Center);
 
-    let controls_block = column![sliders_row, buttons_row].spacing(6);
+    let controls_block = column![seek_row, conrols_row].spacing(6);
 
     // -- row 3: playlist table ----------------------------------------
     let playing_idx = app.playlist_index;

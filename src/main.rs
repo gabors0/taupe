@@ -76,8 +76,38 @@ fn main() -> iced::Result {
         gui::view,
     )
     .subscription(|_app| {
-        // Fire a Tick message every 100ms so the update loop can drain audio status updates.
-        iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick)
+        use iced::Event;
+        use iced::keyboard::{Event as KeyEvent, Key, key::Named};
+        use iced::mouse::{Event as MouseEvent, ScrollDelta};
+
+        let tick = iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick);
+
+        let keys = iced::event::listen_with(|event, _status, _id| match event {
+            Event::Keyboard(KeyEvent::KeyPressed { key, .. }) => match key {
+                Key::Named(Named::Space) => Some(Message::TogglePlayPause),
+                Key::Named(Named::ArrowLeft) => Some(Message::SeekBackward),
+                Key::Named(Named::ArrowRight) => Some(Message::SeekForward),
+                Key::Named(Named::ArrowUp) => Some(Message::VolumeUp),
+                Key::Named(Named::ArrowDown) => Some(Message::VolumeDown),
+                _ => None,
+            },
+            Event::Mouse(MouseEvent::WheelScrolled { delta }) => {
+                let y = match delta {
+                    ScrollDelta::Lines { y, .. } => y,
+                    ScrollDelta::Pixels { y, .. } => y,
+                };
+                if y > 0.0 {
+                    Some(Message::VolumeUp)
+                } else if y < 0.0 {
+                    Some(Message::VolumeDown)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        });
+
+        iced::Subscription::batch([tick, keys])
     })
     .title("Taupe")
     .theme(theme_fn)

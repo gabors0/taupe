@@ -39,7 +39,7 @@
   - [x] App icon/logo
   - [x] Album art display
   - [ ] Responsivity
-  - [ ] Keyboard shortcuts
+  - [x] Keyboard shortcuts
   - [ ] Settings menu
   - [ ] Light theme
   - [ ] Visualizers
