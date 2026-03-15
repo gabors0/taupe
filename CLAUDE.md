@@ -9,13 +9,38 @@ cargo build --release   # Release build (output: target/release/taupe)
 cargo run               # Run in debug mode
 cargo clippy            # Lint
 cargo fmt -- --check    # Check formatting
+cargo test              # Unit tests (src/audio.rs — pick_picture_index logic)
 ```
 
-Unit tests exist in `src/audio.rs` (cover `pick_picture_index` logic). Run with `cargo test`.
+### System Dependencies (Ubuntu/Debian)
+
+Building requires system libraries for audio, GTK file dialogs, and D-Bus (media controls):
+
+```bash
+sudo apt install libasound2-dev libgtk-3-dev libdbus-1-dev pkg-config
+```
 
 ## Architecture
 
-Taupe is a lossless music player built with Rust (edition 2024), using **iced** for the GUI and **rodio** for audio playback.
+Taupe is a lossless music player built with Rust (edition 2024), using **iced** for the GUI, **rodio** for audio playback, and **souvlaki** for OS media control integration (MPRIS on Linux, media keys on Windows/macOS).
+
+### Project Structure
+
+```
+src/
+├── main.rs              # Entry point, channels, theme, keyboard/mouse subscriptions, souvlaki setup
+├── audio.rs             # Audio thread: rodio playback, metadata extraction (lofty), unit tests
+└── gui/
+    ├── mod.rs           # Module exports (App, Message, view, update)
+    └── app.rs           # Elm architecture: App state, Message enum, update(), view()
+
+assets/
+├── brand/               # Logo images (full.png, icon_1k.png, icon_500.png)
+└── icons/               # SVG playback controls (play, pause, next, prev, stop, load, folder)
+
+.github/workflows/
+└── build.yml            # CI: build, test, clippy (warnings = errors)
+```
 
 ### Two-Thread Design
 
@@ -55,17 +80,43 @@ struct TrackInfo { index, path, title, artist, album, track_no, duration_secs }
 
 The seek slider uses a two-phase approach: `SeekMoved(f32)` updates the visual position only (stored in `seek_position`), while `SeekReleased` sends the actual `AudioCommand::Seek` with milliseconds. This prevents stuttering while dragging.
 
+### OS Media Controls (souvlaki)
+
+- `MediaControls` are created in `main.rs` and passed to the `App` via `Rc<RefCell<>>`.
+- The controls are attached lazily — `attach()` is called on the first track load, not at startup.
+- Media events (play/pause/next/prev/seek) are received via a separate `mpsc` channel and polled during `Tick`.
+- Album art is written to `/tmp/taupe_cover.png` for the OS media overlay.
+
+### Keyboard & Mouse Shortcuts
+
+- **Space**: Toggle play/pause
+- **Left/Right arrows**: Seek backward/forward 5 seconds
+- **Up/Down arrows**: Volume up/down 5%
+- **Mouse wheel**: Volume up/down
+
+These are handled via iced keyboard/mouse subscriptions registered in `main.rs`.
+
 ### Entry Point
 
-`src/main.rs` creates the channels, spawns the audio thread via `spawn_audio_thread()`, and launches the iced application with the custom dark theme color palette.
+`src/main.rs` creates the channels, spawns the audio thread via `spawn_audio_thread()`, sets up souvlaki media controls, registers keyboard and mouse subscriptions, and launches the iced application with the custom dark theme color palette.
 
 ## Dependencies
 
-- `iced 0.14` — GUI framework (features: tokio, svg, image)
+- `iced 0.14` — GUI framework (features: tokio, svg, image, lazy)
 - `rodio 0.21` — Audio playback (feature: symphonia-all for broad codec support: FLAC, ALAC, WAV, OGG, MP3, AAC, M4A, AIFF, CAF)
 - `lofty 0.23` — Metadata/tag reading
 - `rfd 0.17` — Native file dialogs
 - `image 0.25` — Album art resizing (Lanczos3, target 80×80)
+- `souvlaki 0.8` — OS media control integration (MPRIS/media keys)
+
+## CI/CD
+
+GitHub Actions workflow (`.github/workflows/build.yml`) runs on every push and PR:
+
+1. Installs system dependencies
+2. Runs `cargo build --release`
+3. Runs `cargo test`
+4. Runs `cargo clippy -- -D warnings` (warnings treated as errors)
 
 ## Color Palette
 
